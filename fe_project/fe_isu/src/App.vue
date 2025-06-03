@@ -23,12 +23,23 @@
 
     <!-- 메인 콘텐츠 영역 -->
     <main class="main-content">
-      <!-- 회의 진행 탭: 중앙에 큰 녹음 버튼만 표시 -->
+      <!-- 회의 진행 탭: 중앙에 큰 녹음 버튼 -->
       <section v-if="activeTab === 'current'" class="current-tab">
-        <div class="record-center">
+        <!-- 1) 녹음 버튼 -->
+        <button
+          class="record-btn"
+          type="button"
+          @click="toggleRecording"
+        >
           <div class="outer-circle">
-            <div class="inner-circle"></div>
+            <div v-if="!isRecording" class="inner-circle"></div>
+            <div v-else class="inner-square"></div>
           </div>
+        </button>
+
+        <!-- 2) 녹음 중 텍스트 (버튼 아래, 절대 위치) -->
+        <div v-if="isRecording" class="recording-text">
+          녹음중…
         </div>
       </section>
 
@@ -47,8 +58,15 @@ export default {
   name: 'App',
   data() {
     return {
-      activeTab: 'current'
+      activeTab: 'current',
+      isRecording: false
     };
+  },
+  methods: {
+    toggleRecording() {
+      this.isRecording = !this.isRecording;
+      // ▶ 실제 녹음 로직을 여기에 연결하세요.
+    }
   }
 };
 </script>
@@ -97,7 +115,7 @@ export default {
 .tab-button {
   background: none;
   border: none;
-  color: #888888; /* 기본 회색 */
+  color: #888888;
   font-size: 24px;
   padding: 0 24px;
   cursor: pointer;
@@ -112,7 +130,7 @@ export default {
 }
 
 .tab-button.active {
-  color: #ffffff; /* 선택된 탭은 흰색 */
+  color: #ffffff;
   border-bottom: 4px solid #00bfa5;
 }
 
@@ -122,41 +140,64 @@ export default {
   background-color: #fff;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 /* ─────────── 회의 진행 탭 영역 ─────────── */
 .current-tab {
   flex: 1;
+  position: relative;           /* 버튼과 텍스트를 절대 위치로 배치하기 위함 */
   display: flex;
-  justify-content: center;
-  align-items: center;
+  justify-content: center;      /* 수평 중앙 정렬 (버튼) */
+  align-items: center;          /* 수직 중앙 정렬 (버튼) */
 }
 
-/* 중앙 정렬된 녹음 버튼 컨테이너 */
-.record-center {
-  display: flex;
-  justify-content: center;
-  align-items: center;
+/* ─────────── 녹음 버튼 ─────────── */
+.record-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  /* 절대 위치로 중앙 배치 */
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
 
-/* 바깥 원 (회색 배경) */
 .outer-circle {
-  width: 150px;              /* 원 전체 크기 */
+  width: 150px;
   height: 150px;
-  background-color: #ececec; /* 연한 회색 */
-  border: 1px solid #ccc;    /* 테두리 */
+  background-color: #ececec;
+  border: 1px solid #ccc;
   border-radius: 50%;
   display: flex;
   justify-content: center;
   align-items: center;
 }
 
-/* 안쪽 원 (빨간 녹음 버튼) */
 .inner-circle {
-  width: 80px;               /* 안쪽 원 크기 */
+  width: 80px;
   height: 80px;
-  background-color: #e53935; /* 진한 빨강 */
+  background-color: #e53935;
   border-radius: 50%;
+}
+
+.inner-square {
+  width: 80px;
+  height: 80px;
+  background-color: #e53935;
+}
+
+/* ─────────── 녹음 중 텍스트 ─────────── */
+.recording-text {
+  /* 버튼 아래쪽(절대 위치) */
+  position: absolute;
+  top: calc(50% + 100px);   /* 버튼의 중앙에서 +100px 아래에 위치 */
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 32px;          /* 더 크게 */
+  color: #000000;           /* 검은색 */
 }
 
 /* ─────────── 지난 회의 탭 (플레이스홀더) ─────────── */
