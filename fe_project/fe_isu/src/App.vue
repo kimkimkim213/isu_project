@@ -184,8 +184,9 @@ export default {
 }
 
 .inner-square {
-  width: 80px;
-  height: 80px;
+  width: 65px;
+  height: 65px;
+  border-radius: 8px; /* 모서리를 둥글게 */
   background-color: #e53935;
 }
 
