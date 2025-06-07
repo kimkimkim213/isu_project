@@ -12,6 +12,10 @@
   "license": "ISC",
   "description": "",
   "devDependencies": {
-    "@vue/cli-service": "^5.0.8"
+    "@vue/cli-service": "^5.0.8",
+    "@vue/compiler-sfc": "^3.5.16"
+  },
+  "dependencies": {
+    "vue": "^3.5.16"
   }
 }
