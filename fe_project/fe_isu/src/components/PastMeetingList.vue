@@ -62,7 +62,7 @@ export default {
           const date = new Date(rec.timestamp);
           return {
             id: rec.timestamp + '_' + index, // 고유한 ID 생성
-            title: `회의 녹음본 ${date.toLocaleString()}`, // 제목 생성 (예: '회의 녹음본 2025. 6. 13. 오후 5:47:24')
+            title: rec.filename || `회의 녹음본 ${date.toLocaleString()}`, // 파일명이 있으면 파일명 사용, 없으면 기존 방식 사용
             date: date.toLocaleString(),
             audioUrl: audioUrl,
             originalTimestamp: rec.timestamp, // 파일 이름 생성을 위해 원본 타임스탬프 저장
@@ -74,10 +74,9 @@ export default {
   },
   methods: {
     getFileName(meeting) {
-      // 다운로드 시 사용할 파일 이름 생성 (타임스탬프 기반)
-      // ISO 형식의 타임스탬프에서 유효하지 않은 문자 제거 (예: 콜론)
-      const sanitizedTimestamp = meeting.originalTimestamp ? meeting.originalTimestamp.replace(/[:.]/g, '-') : 'unknown';
-      return `회의록_${sanitizedTimestamp}.webm`; // webm 확장자 사용 (MediaRecorder의 기본 타입)
+      // 다운로드 시 사용할 파일 이름 생성 (기본적으로는 title 사용, 없으면 timestamp 기반)
+      const baseName = meeting.title.replace(/[\\/:*?"<>|]/g, '_'); // 파일명으로 사용할 수 없는 문자 제거
+      return `${baseName}.webm`; // webm 확장자 사용
     },
   },
   // 컴포넌트가 언마운트될 때 생성된 Blob URL 해제

@@ -82,7 +82,8 @@ storedRecordings.forEach(item => {
     if (blob) { // Blob 변환이 성공했을 때만 추가
       recordings.value.push({
         timestamp: item.timestamp,
-        audioBlob: blob // 여기에 audioBlob이 제대로 들어가는 것이 중요
+        audioBlob: blob, // 여기에 audioBlob이 제대로 들어가는 것이 중요
+        filename: item.filename // 파일 이름도 로드
       });
     } else {
       console.warn('Failed to convert base64 to blob for item:', item);
@@ -100,14 +101,16 @@ watch(recordings, async (newRecordings) => {
       return {
         timestamp: rec.timestamp,
         audioBase64: audioBase64,
-        audioType: rec.audioBlob.type
+        audioType: rec.audioBlob.type,
+        filename: rec.filename // 파일 이름 저장
       };
     } else {
       console.warn('Skipping non-Blob audioBlob during serialization:', rec.audioBlob);
       return {
           timestamp: rec.timestamp,
           audioBase64: null,
-          audioType: null
+          audioType: null,
+          filename: rec.filename // 파일 이름은 null이 아니어도 유지
       };
     }
   }));
@@ -117,19 +120,22 @@ watch(recordings, async (newRecordings) => {
 
 // RecorderPanel로부터 `data` 객체를 받음
 function handleRecordingFinished(data) {
-  const { audioBlob } = data; // audioUrl은 여기서 사용하지 않음
-  const timestamp = new Date().toISOString(); 
-  
+  const { audioBlob, filename } = data; // audioUrl은 여기서 사용하지 않음
+  const timestamp = new Date().toISOString();
+
   // 녹음 직후에 여기서 audioBlob이 제대로 들어오는지 console.log로 확인
   console.log('handleRecordingFinished: Received audioBlob:', audioBlob);
   console.log('handleRecordingFinished: Is it a Blob?', audioBlob instanceof Blob);
+  console.log('handleRecordingFinished: Received filename:', filename);
 
 
   recordings.value.push({
     audioBlob: audioBlob, // 이곳에 audioBlob이 제대로 저장되어야 함
-    timestamp: timestamp
+    timestamp: timestamp,
+    filename: filename || `회의록_${new Date(timestamp).toLocaleString().replace(/[:.]/g, '-')}` // 파일명도 저장
   });
-  alert("녹음본이 저장되었습니다! (페이지 새로고침 후에도 재생 가능합니다.)");
+  // Removed alert here, let RecorderPanel handle specific messages with custom modal
+  // alert("녹음본이 저장되었습니다! (페이지 새로고침 후에도 재생 가능합니다.)");
 }
 
 onMounted(() => {
