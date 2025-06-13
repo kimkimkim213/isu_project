@@ -1,25 +1,35 @@
 <template>
   <div class="recorder">
     <button
-      :class="['record-button', { 'recording': isRecording, 'options-active': showOptions }]"
+      :class="['record-button', { recording: isRecording, 'options-active': showOptions }]"
       @click="handleRecordButtonClick"
     >
       <span
-        :class="['icon', { 'is-recording': isRecording, 'shifted-active': showOptions }]
-        "
+        :class="['icon', { 'is-recording': isRecording, 'shifted-active': showOptions }]"
         @click.stop="handleIconClick"
       ></span>
 
       <div v-if="showOptions && !showFilenamePrompt" class="options-container">
         <button class="option-button" @click.stop="promptForSave">녹음본 저장하고 종료하기</button>
-        <button class="option-button" @click.stop="discardAndStopRecording">녹음본 저장하지 않고 종료하기</button>
+        <button class="option-button" @click.stop="discardAndStopRecording">
+          녹음본 저장하지 않고 종료하기
+        </button>
       </div>
     </button>
 
-    <p v-if="isRecording && !showOptions && !showFilenamePrompt" class="recording-status-text">녹음중...</p>
+    <p v-if="isRecording && !showOptions && !showFilenamePrompt" class="recording-status-text">
+      녹음중...
+    </p>
 
+    <div class="volume-bar-container" v-if="isRecording && !showOptions">
+      <div class="volume-bar" :style="{ width: volume + '%' }"></div>
+    </div>
     <!-- Dim overlay for options and filename prompt -->
-    <div v-if="showOptions || showFilenamePrompt || showMessageModal" class="dim-overlay" @click="handleOverlayClick"></div>
+    <div
+      v-if="showOptions || showFilenamePrompt || showMessageModal"
+      class="dim-overlay"
+      @click="handleOverlayClick"
+    ></div>
 
     <!-- Filename Input Prompt -->
     <div v-if="showFilenamePrompt" class="filename-prompt-modal">
@@ -49,17 +59,23 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref } from "vue";
 
-const isRecording = ref(false)
-const mediaRecorder = ref(null)
-const audioChunks = ref([])
-const emit = defineEmits(['recording-finished'])
+const showFilenamePrompt = ref(false);
+const filenameInput = ref("");
+const isRecording = ref(false);
+const mediaRecorder = ref(null);
+const audioChunks = ref([]);
+const emit = defineEmits(["recording-finished"]);
 
-const showOptions = ref(false) // 팝업 표시 여부 제어 (저장/취소 옵션)
-const showFilenamePrompt = ref(false) // 파일 이름 입력 팝업 표시 여부 제어
-const filenameInput = ref('') // 사용자 입력 파일 이름
-let currentStream = null; // 마이크 스트림을 저장할 변수
+const showOptions = ref(false);
+const volume = ref(0);
+
+let currentStream = null;
+let analyser = null;
+let dataArray = null;
+let audioContext = null;
+let animationFrameId = null;
 
 // 붉은 원 (icon) 클릭 시 호출될 함수
 function handleIconClick() {
@@ -108,61 +124,70 @@ async function toggleRecording() {
   if (!isRecording.value) {
     // 녹음 시작 로직
     try {
-      currentStream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      mediaRecorder.value = new MediaRecorder(currentStream)
+      currentStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      startVolumeMeter(currentStream);
+      mediaRecorder.value = new MediaRecorder(currentStream);
 
       mediaRecorder.value.ondataavailable = (event) => {
-        audioChunks.value.push(event.data)
-      }
+        audioChunks.value.push(event.data);
+      };
 
       mediaRecorder.value.onstop = () => {
         if (currentStream) {
-          currentStream.getTracks().forEach(track => track.stop());
+          currentStream.getTracks().forEach((track) => track.stop());
           currentStream = null;
         }
-      }
+      };
 
-      mediaRecorder.value.start()
-      isRecording.value = true
-      console.log('녹음 시작됨')
-
+      mediaRecorder.value.start(100);
+      isRecording.value = true;
+      console.log("녹음 시작됨");
     } catch (error) {
-      console.error('마이크 접근 오류:', error)
+      console.error("마이크 접근 오류:", error);
       // Custom modal instead of alert
-      displayMessageModal('마이크 접근 오류', '마이크 접근 권한이 필요합니다. 브라우저 설정에서 마이크 접근을 허용해주세요.');
+      displayMessageModal(
+        "마이크 접근 오류",
+        "마이크 접근 권한이 필요합니다. 브라우저 설정에서 마이크 접근을 허용해주세요."
+      );
     }
   } else {
     // 녹음 중일 때 버튼을 누르면 팝업 표시 (저장/취소 옵션)
     showOptions.value = true;
-    console.log('녹음 중지 옵션 표시');
+    console.log("녹음 중지 옵션 표시");
   }
 }
 
 // "녹음본 저장하고 종료하기" 버튼 클릭 시 호출
 function promptForSave() {
-  if (mediaRecorder.value && mediaRecorder.value.state === 'recording') {
+  if (mediaRecorder.value && mediaRecorder.value.state === "recording") {
     mediaRecorder.value.stop(); // 녹음 중지. ondataavailable 이벤트 발생
-    console.log('녹음 중지됨. 파일 이름 입력 대기.');
+    console.log("녹음 중지됨. 파일 이름 입력 대기.");
   }
-
+  stopVolumeMeter();
   // 데이터가 있는지 확인
   if (audioChunks.value.length === 0) {
-      console.error('ERROR: No audio chunks were collected! 녹음된 데이터가 없습니다.');
-      displayMessageModal('녹음 오류', '녹음된 데이터가 없습니다. 마이크가 제대로 작동하는지 확인해주세요.');
-      resetRecordingState();
-      return;
+    console.error("ERROR: No audio chunks were collected! 녹음된 데이터가 없습니다.");
+    displayMessageModal(
+      "녹음 오류",
+      "녹음된 데이터가 없습니다. 마이크가 제대로 작동하는지 확인해주세요."
+    );
+    resetRecordingState();
+    return;
   }
 
   // 기본 파일명 설정 (예: "회의록_2024-06-13_15-30-00")
-  filenameInput.value = `회의록_${new Date().toLocaleString('ko-KR', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).replace(/(\.\s*|\s*:\s*|\s*)/g, '-').replace(/\.$/, '')}`; // 날짜 형식에 따라 조정 필요
+  filenameInput.value = `회의록_${new Date()
+    .toLocaleString("ko-KR", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    })
+    .replace(/(\.\s*|\s*:\s*|\s*)/g, "-")
+    .replace(/\.$/, "")}`; // 날짜 형식에 따라 조정 필요
   showFilenamePrompt.value = true; // 파일 이름 입력 팝업 표시
   showOptions.value = false; // 옵션 팝업 숨김
 }
@@ -170,52 +195,58 @@ function promptForSave() {
 // 파일 이름 입력 후 "저장" 버튼 클릭 시 호출
 function confirmSaveRecording() {
   if (audioChunks.value.length === 0) {
-    console.error('ERROR: Cannot save. No audio chunks available.');
-    displayMessageModal('저장 오류', '저장할 녹음 데이터가 없습니다.');
+    console.error("ERROR: Cannot save. No audio chunks available.");
+    displayMessageModal("저장 오류", "저장할 녹음 데이터가 없습니다.");
     resetRecordingState();
     return;
   }
 
-  const audioBlob = new Blob(audioChunks.value, { type: 'audio/webm' });
+  const audioBlob = new Blob(audioChunks.value, { type: "audio/webm" });
 
   if (audioBlob.size === 0) {
-    console.error('ERROR: Generated audio Blob is empty! Blob 크기가 0입니다.');
-    displayMessageModal('저장 오류', '녹음 파일이 비어 있습니다. 마이크 입력이 없었을 수 있습니다.');
+    console.error("ERROR: Generated audio Blob is empty! Blob 크기가 0입니다.");
+    displayMessageModal(
+      "저장 오류",
+      "녹음 파일이 비어 있습니다. 마이크 입력이 없었을 수 있습니다."
+    );
     resetRecordingState();
     return;
   }
 
   const audioUrl = URL.createObjectURL(audioBlob);
   // 입력된 파일명이 없으면 기본 파일명 사용
-  const filename = filenameInput.value.trim() || `회의록_${new Date().toLocaleString('ko-KR').replace(/[:.]/g, '-')}`;
+  const filename =
+    filenameInput.value.trim() ||
+    `회의록_${new Date().toLocaleString("ko-KR").replace(/[:.]/g, "-")}`;
 
-  emit('recording-finished', { audioUrl, audioBlob, filename }); // App.vue로 Blob 데이터와 파일명 함께 전달
+  emit("recording-finished", { audioUrl, audioBlob, filename }); // App.vue로 Blob 데이터와 파일명 함께 전달
   console.log(`녹음본 "${filename}" 저장 및 종료`);
-  displayMessageModal('저장 완료', `"${filename}" 녹음본이 저장되었습니다!`);
+  displayMessageModal("저장 완료", `"${filename}" 녹음본이 저장되었습니다!`);
   resetRecordingState(); // 상태 초기화
 }
 
 // 팝업 - "녹음본 저장하지 않고 종료하기" (또는 파일명 입력 취소 시)
 function discardAndStopRecording() {
-  if (mediaRecorder.value && mediaRecorder.value.state === 'recording') {
+  if (mediaRecorder.value && mediaRecorder.value.state === "recording") {
     mediaRecorder.value.stop();
   }
+  stopVolumeMeter();
   audioChunks.value = []; // 데이터 버림
-  console.log('녹음본 저장하지 않고 종료');
-  displayMessageModal('녹음 삭제', '녹음본이 저장되지 않고 삭제되었습니다.');
+  console.log("녹음본 저장하지 않고 종료");
+  displayMessageModal("녹음 삭제", "녹음본이 저장되지 않고 삭제되었습니다.");
   resetRecordingState();
 }
 
 // 파일명 입력 팝업에서 "취소" 버튼 클릭 시
 function cancelFilenamePrompt() {
-  console.log('파일명 입력 취소. 녹음본 삭제 처리.');
+  console.log("파일명 입력 취소. 녹음본 삭제 처리.");
   discardAndStopRecording(); // 파일명 입력을 취소하면 해당 녹음본은 버려짐
 }
 
 // 팝업 - "취소" (녹음을 계속하고 팝업 닫기)
 function cancelOptions() {
   showOptions.value = false;
-  console.log('녹음 중지 옵션 취소, 녹음 계속');
+  console.log("녹음 중지 옵션 취소, 녹음 계속");
   // 녹음 자체는 mediaRecorder.stop()이 호출되기 전까지 계속됨.
   // 이 함수는 단순히 옵션 팝업만 닫음.
 }
@@ -225,10 +256,10 @@ function resetRecordingState() {
   isRecording.value = false;
   showOptions.value = false;
   showFilenamePrompt.value = false;
-  filenameInput.value = '';
+  filenameInput.value = "";
   audioChunks.value = [];
   if (currentStream) {
-    currentStream.getTracks().forEach(track => track.stop());
+    currentStream.getTracks().forEach((track) => track.stop());
     currentStream = null;
   }
   mediaRecorder.value = null; // Recorder 객체도 리셋하여 새 녹음 준비
@@ -236,8 +267,8 @@ function resetRecordingState() {
 
 // Custom Message Modal (for errors/information) - replacing alert()
 const showMessageModal = ref(false);
-const messageModalTitle = ref('');
-const messageModalContent = ref('');
+const messageModalTitle = ref("");
+const messageModalContent = ref("");
 
 function displayMessageModal(title, content) {
   messageModalTitle.value = title;
@@ -247,8 +278,43 @@ function displayMessageModal(title, content) {
 
 function closeMessageModal() {
   showMessageModal.value = false;
-  messageModalTitle.value = '';
-  messageModalContent.value = '';
+  messageModalTitle.value = "";
+  messageModalContent.value = "";
+}
+
+function startVolumeMeter(stream) {
+  audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const source = audioContext.createMediaStreamSource(stream);
+  analyser = audioContext.createAnalyser();
+  analyser.fftSize = 256;
+
+  const bufferLength = analyser.frequencyBinCount;
+  dataArray = new Uint8Array(bufferLength);
+
+  source.connect(analyser);
+
+  const updateVolume = () => {
+    analyser.getByteFrequencyData(dataArray);
+    let sum = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      sum += dataArray[i];
+    }
+    const avg = sum / bufferLength;
+    volume.value = Math.min(100, Math.round((avg / 255) * 100));
+
+    animationFrameId = requestAnimationFrame(updateVolume);
+  };
+
+  updateVolume();
+}
+
+function stopVolumeMeter() {
+  cancelAnimationFrame(animationFrameId);
+  if (audioContext) {
+    audioContext.close();
+    audioContext = null;
+  }
+  volume.value = 0;
 }
 </script>
 
@@ -305,8 +371,8 @@ function closeMessageModal() {
 /* record-button 자체가 팝업 형태로 확장될 때 */
 .record-button.options-active {
   /* --- 팝업 크기 및 비율 조절 --- */
-  width: 70vw;   /* 뷰포트 너비의 70% */
-  height: 35vh;  /* 뷰포트 높이의 35% */
+  width: 70vw; /* 뷰포트 너비의 70% */
+  height: 35vh; /* 뷰포트 높이의 35% */
   max-width: 900px; /* 최대 너비 제한 */
   max-height: 450px; /* 최대 높이 제한 */
   border-radius: 16px; /* 둥근 사각형 */
@@ -323,7 +389,6 @@ function closeMessageModal() {
   background-color: #ff1744; /* 이미지처럼 다시 밝은 붉은색 */
   margin-left: 25px; /* 이미지처럼 왼쪽 여백 */
 }
-
 
 /* 팝업 내용 컨테이너 (오른쪽에 나타날 요소) */
 .options-container {
@@ -345,7 +410,6 @@ function closeMessageModal() {
   opacity: 1;
   transform: translateX(0);
 }
-
 
 .recording-status-text {
   position: absolute;
@@ -516,5 +580,23 @@ function closeMessageModal() {
 
 .message-modal-content button:hover {
   background-color: #0056b3;
+}
+
+.volume-bar-container {
+  position: absolute;
+  bottom: 27.5%;
+  left: 25%;
+  width: 50%;
+  height: 12px;
+  background-color: #ddd;
+  border-radius: 6px;
+  overflow: hidden;
+  z-index: 10;
+}
+
+.volume-bar {
+  height: 100%;
+  background-color: #4caf50;
+  transition: width 0.1s linear;
 }
 </style>
