@@ -19,12 +19,18 @@
             지난 회의
           </button>
         </nav>
+        <!-- 테마 전환 버튼은 제거되었습니다. -->
       </div>
     </header>
 
     <main class="main-content">
       <RecorderPanel v-if="activeTab === 'current'" @recording-finished="handleRecordingFinished" />
-      <PastMeetingList v-else :recordings="recordings" />
+      <PastMeetingList 
+        v-else 
+        :recordings="recordings" 
+        @delete-recording="handleDeleteRecording"
+        @update-recording-filename="handleUpdateRecordingFilename"
+      />
     </main>
   </div>
 </template>
@@ -69,6 +75,12 @@ function base64ToBlob(base64, mimeType) {
   }
 }
 
+// Helper function to generate a unique ID
+function generateUniqueId() {
+  // Use a combination of timestamp and random number for a high probability of uniqueness
+  return Date.now().toString(36) + Math.random().toString(36).substring(2);
+}
+
 const activeTab = ref('current')
 
 // recordings를 localStorage에서 로드하거나 빈 배열로 초기화
@@ -81,6 +93,7 @@ storedRecordings.forEach(item => {
     const blob = base64ToBlob(item.audioBase64, item.audioType);
     if (blob) { // Blob 변환이 성공했을 때만 추가
       recordings.value.push({
+        id: item.id || generateUniqueId(), // 기존 데이터에 ID가 없으면 새로 생성
         timestamp: item.timestamp,
         audioBlob: blob, // 여기에 audioBlob이 제대로 들어가는 것이 중요
         filename: item.filename // 파일 이름도 로드
@@ -99,6 +112,7 @@ watch(recordings, async (newRecordings) => {
     if (rec.audioBlob instanceof Blob) {
       const audioBase64 = await blobToBase64(rec.audioBlob);
       return {
+        id: rec.id, // ID 저장
         timestamp: rec.timestamp,
         audioBase64: audioBase64,
         audioType: rec.audioBlob.type,
@@ -107,6 +121,7 @@ watch(recordings, async (newRecordings) => {
     } else {
       console.warn('Skipping non-Blob audioBlob during serialization:', rec.audioBlob);
       return {
+          id: rec.id, // ID 유지
           timestamp: rec.timestamp,
           audioBase64: null,
           audioType: null,
@@ -120,23 +135,38 @@ watch(recordings, async (newRecordings) => {
 
 // RecorderPanel로부터 `data` 객체를 받음
 function handleRecordingFinished(data) {
-  const { audioBlob, filename } = data; // audioUrl은 여기서 사용하지 않음
+  const { audioBlob, filename } = data; 
   const timestamp = new Date().toISOString();
 
-  // 녹음 직후에 여기서 audioBlob이 제대로 들어오는지 console.log로 확인
   console.log('handleRecordingFinished: Received audioBlob:', audioBlob);
   console.log('handleRecordingFinished: Is it a Blob?', audioBlob instanceof Blob);
   console.log('handleRecordingFinished: Received filename:', filename);
 
 
   recordings.value.push({
-    audioBlob: audioBlob, // 이곳에 audioBlob이 제대로 저장되어야 함
+    id: generateUniqueId(), // 새 녹음본에 고유 ID 생성
+    audioBlob: audioBlob, 
     timestamp: timestamp,
-    filename: filename || `회의록_${new Date(timestamp).toLocaleString().replace(/[:.]/g, '-')}` // 파일명도 저장
+    filename: filename || `회의록_${new Date(timestamp).toLocaleString().replace(/[:.]/g, '-')}` 
   });
-  // Removed alert here, let RecorderPanel handle specific messages with custom modal
-  // alert("녹음본이 저장되었습니다! (페이지 새로고침 후에도 재생 가능합니다.)");
 }
+
+// PastMeetingList로부터 녹음본 삭제 이벤트 처리
+function handleDeleteRecording(idToDelete) {
+  recordings.value = recordings.value.filter(rec => rec.id !== idToDelete);
+}
+
+// PastMeetingList로부터 녹음본 파일명 업데이트 이벤트 처리
+function handleUpdateRecordingFilename({ id, newFilename }) {
+  recordings.value = recordings.value.map(rec => {
+    if (rec.id === id) {
+      return { ...rec, filename: newFilename };
+    }
+    return rec;
+  });
+}
+
+// 다크 모드/화이트 모드 상태 관리 및 관련 로직이 제거되었습니다.
 
 onMounted(() => {
   // 현재는 마운트 시 실행할 코드가 없습니다.
@@ -148,12 +178,17 @@ onUnmounted(() => {
 </script>
 
 <style>
+/* 전역 스타일 */
 body {
   font-family: 'PyeojinGothic-Bold', sans-serif;
   font-size: 16px; /* 기본 폰트 크기 */
   line-height: 1.6; /* 줄 간격 */
   color: #333; /* 기본 텍스트 색상 */
+  background-color: #fff; /* 기본 배경 색상 (화이트 모드) */
+  /* 테마 전환 애니메이션은 제거되었습니다. */
 }
+
+/* 다크 모드 전역 스타일은 제거되었습니다. */
 </style>
 
 <style scoped>
@@ -162,16 +197,27 @@ body {
   flex-direction: column;
   height: 100vh;
   margin: 0;
+  /* 테마에 따른 배경 및 텍스트 색상 전환 관련 스타일은 제거되었습니다. */
+  background-color: #fff; /* 기본 배경색으로 설정 */
+  color: #333; /* 기본 텍스트색으로 설정 */
 }
 
+/* 다크 모드/라이트 모드 변수 정의는 제거되었습니다. */
+
+
 .header-bar {
+  position: fixed; /* 헤더 고정 */
+  top: 0;
+  left: 0;
+  width: 100%; /* 너비를 100%로 설정 */
+  z-index: 1000; /* 다른 콘텐츠 위에 표시되도록 z-index 설정 */
   display: flex;
   justify-content: center;
   align-items: center;
-  background-color: #000;
-  color: #fff;
+  /* 헤더 그라데이션은 제거되었고, 단색 배경으로 롤백합니다. */
+  background-color: #000; 
+  color: #fff; /* 헤더 텍스트는 항상 흰색 유지 */
   height: 100px;
-  width: 100%;
   box-sizing: border-box;
   flex-shrink: 0;
   overflow: hidden; /* 로고가 밖으로 나갈 때 스크롤바 생기지 않도록 */
@@ -183,7 +229,6 @@ body {
   justify-content: flex-start;
   width: 100%;
   max-width: 1200px; /* 고정할 최대 너비 */
-  /* padding: 0 24px; 제거: 로고를 끝단으로 보내기 위해 */
   box-sizing: border-box;
   position: relative;
 }
@@ -191,7 +236,6 @@ body {
 .logo-placeholder {
   flex-shrink: 0;
   margin-left: -24px; /* 로고를 왼쪽으로 24px 이동시켜 끝단에 붙임 (원래 패딩만큼) */
-  /* 필요하다면 이 값을 더 작게 (더 왼쪽으로) 또는 0으로 조정할 수 있습니다. */
 }
 
 .logo-img {
@@ -214,7 +258,7 @@ body {
   font-family: 'PyeojinGothic-Bold', sans-serif;
   background: none;
   border: none;
-  color: #888;
+  color: #888; /* 기존 색상으로 롤백 */
   font-size: 36px;
   padding: 0 24px;
   cursor: pointer;
@@ -231,9 +275,14 @@ body {
   color: #fff;
 }
 
+/* 테마 전환 버튼 스타일은 제거되었습니다. */
+
 .main-content {
   flex: 1;
-  background-color: #fff;
+  background-color: #fff; /* main-content 배경색도 기본 화이트로 롤백 */
   position: relative;
+  padding-top: 100px; /* 고정된 헤더의 높이만큼 여백 추가 */
 }
+
+/* PastMeetingList 내부 스타일 오버라이드는 제거되었습니다. */
 </style>
