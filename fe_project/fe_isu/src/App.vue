@@ -19,7 +19,6 @@
             지난 회의
           </button>
         </nav>
-        <!-- 테마 전환 버튼은 제거되었습니다. -->
       </div>
     </header>
 
@@ -96,7 +95,8 @@ storedRecordings.forEach(item => {
         id: item.id || generateUniqueId(), // 기존 데이터에 ID가 없으면 새로 생성
         timestamp: item.timestamp,
         audioBlob: blob, // 여기에 audioBlob이 제대로 들어가는 것이 중요
-        filename: item.filename // 파일 이름도 로드
+        filename: item.filename, // 파일 이름도 로드
+        transcription: item.transcription || '' // 텍스트 변환 결과도 로드
       });
     } else {
       console.warn('Failed to convert base64 to blob for item:', item);
@@ -116,7 +116,8 @@ watch(recordings, async (newRecordings) => {
         timestamp: rec.timestamp,
         audioBase64: audioBase64,
         audioType: rec.audioBlob.type,
-        filename: rec.filename // 파일 이름 저장
+        filename: rec.filename, // 파일 이름 저장
+        transcription: rec.transcription // 텍스트 변환 결과 저장
       };
     } else {
       console.warn('Skipping non-Blob audioBlob during serialization:', rec.audioBlob);
@@ -125,7 +126,8 @@ watch(recordings, async (newRecordings) => {
           timestamp: rec.timestamp,
           audioBase64: null,
           audioType: null,
-          filename: rec.filename // 파일 이름은 null이 아니어도 유지
+          filename: rec.filename, // 파일 이름은 null이 아니어도 유지
+          transcription: rec.transcription // 텍스트 변환 결과 유지
       };
     }
   }));
@@ -135,19 +137,21 @@ watch(recordings, async (newRecordings) => {
 
 // RecorderPanel로부터 `data` 객체를 받음
 function handleRecordingFinished(data) {
-  const { audioBlob, filename } = data; 
+  const { audioBlob, filename, transcription } = data; // transcription도 함께 받음
   const timestamp = new Date().toISOString();
 
   console.log('handleRecordingFinished: Received audioBlob:', audioBlob);
   console.log('handleRecordingFinished: Is it a Blob?', audioBlob instanceof Blob);
   console.log('handleRecordingFinished: Received filename:', filename);
+  console.log('handleRecordingFinished: Received transcription:', transcription);
 
 
   recordings.value.push({
     id: generateUniqueId(), // 새 녹음본에 고유 ID 생성
     audioBlob: audioBlob, 
     timestamp: timestamp,
-    filename: filename || `회의록_${new Date(timestamp).toLocaleString().replace(/[:.]/g, '-')}` 
+    filename: filename || `회의록_${new Date(timestamp).toLocaleString().replace(/[:.]/g, '-')}`,
+    transcription: transcription // 텍스트 변환 결과도 저장
   });
 }
 
@@ -166,8 +170,6 @@ function handleUpdateRecordingFilename({ id, newFilename }) {
   });
 }
 
-// 다크 모드/화이트 모드 상태 관리 및 관련 로직이 제거되었습니다.
-
 onMounted(() => {
   // 현재는 마운트 시 실행할 코드가 없습니다.
 });
@@ -178,17 +180,13 @@ onUnmounted(() => {
 </script>
 
 <style>
-/* 전역 스타일 */
 body {
   font-family: 'PyeojinGothic-Bold', sans-serif;
   font-size: 16px; /* 기본 폰트 크기 */
   line-height: 1.6; /* 줄 간격 */
   color: #333; /* 기본 텍스트 색상 */
-  background-color: #fff; /* 기본 배경 색상 (화이트 모드) */
-  /* 테마 전환 애니메이션은 제거되었습니다. */
+  background-color: #fff; /* 기본 배경 색상 */
 }
-
-/* 다크 모드 전역 스타일은 제거되었습니다. */
 </style>
 
 <style scoped>
@@ -197,13 +195,9 @@ body {
   flex-direction: column;
   height: 100vh;
   margin: 0;
-  /* 테마에 따른 배경 및 텍스트 색상 전환 관련 스타일은 제거되었습니다. */
-  background-color: #fff; /* 기본 배경색으로 설정 */
-  color: #333; /* 기본 텍스트색으로 설정 */
+  background-color: #fff; /* 기본 배경색 */
+  color: #333; /* 기본 텍스트색 */
 }
-
-/* 다크 모드/라이트 모드 변수 정의는 제거되었습니다. */
-
 
 .header-bar {
   position: fixed; /* 헤더 고정 */
@@ -214,8 +208,8 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  /* 헤더 그라데이션은 제거되었고, 단색 배경으로 롤백합니다. */
-  background-color: #000; 
+  /* 상단은 완전히 검은색, 하단으로 갈수록 투명해지는 그라데이션 */
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 1), rgba(0, 0, 0, 0));
   color: #fff; /* 헤더 텍스트는 항상 흰색 유지 */
   height: 100px;
   box-sizing: border-box;
@@ -258,7 +252,7 @@ body {
   font-family: 'PyeojinGothic-Bold', sans-serif;
   background: none;
   border: none;
-  color: #888; /* 기존 색상으로 롤백 */
+  color: #888; 
   font-size: 36px;
   padding: 0 24px;
   cursor: pointer;
@@ -275,14 +269,10 @@ body {
   color: #fff;
 }
 
-/* 테마 전환 버튼 스타일은 제거되었습니다. */
-
 .main-content {
   flex: 1;
-  background-color: #fff; /* main-content 배경색도 기본 화이트로 롤백 */
+  background-color: #fff; /* main-content 배경색 */
   position: relative;
   padding-top: 100px; /* 고정된 헤더의 높이만큼 여백 추가 */
 }
-
-/* PastMeetingList 내부 스타일 오버라이드는 제거되었습니다. */
 </style>

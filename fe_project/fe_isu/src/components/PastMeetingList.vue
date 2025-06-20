@@ -33,16 +33,22 @@
       ></audio>
 
       <div class="meeting-actions">
-        <!-- 다운로드 버튼 -->
+        <!-- 오디오 다운로드 버튼 -->
         <a
           v-if="meeting.audioUrl"
           :href="meeting.audioUrl"
-          :download="getFileName(meeting)"
+          :download="getAudioFileName(meeting)"
           class="action-button download"
         >
-          다운로드
+          녹음 파일 다운로드
         </a>
-        <!-- 기존의 수정 버튼은 제거되었습니다. -->
+        <!-- 텍스트 다운로드 버튼 -->
+        <button
+          class="action-button text-download"
+          @click="downloadTextFile(meeting)"
+        >
+          텍스트 다운로드
+        </button>
         <!-- 삭제 버튼 -->
         <button
           class="action-button delete"
@@ -112,14 +118,15 @@ export default {
             date: date.toLocaleString(),
             audioUrl: audioUrl,
             originalTimestamp: rec.timestamp, // 파일 이름 생성을 위해 원본 타임스탬프 저장
-            audioBlob: rec.audioBlob // 필요시 Blob 자체도 보관 (여기서는 audioUrl만 사용해도 됨)
+            audioBlob: rec.audioBlob, // 필요시 Blob 자체도 보관 (여기서는 audioUrl만 사용해도 됨)
+            transcription: rec.transcription || '텍스트 변환 결과 없음' // 텍스트 변환 결과도 추가
           };
         });
       }
     }
   },
   methods: {
-    getFileName(meeting) {
+    getAudioFileName(meeting) { // 오디오 파일명 얻기 함수 (이름 변경)
       // 다운로드 시 사용할 파일 이름 생성 (기본적으로는 title 사용, 없으면 timestamp 기반)
       const baseName = meeting.title.replace(/[\\/:*?"<>|]/g, '_'); // 파일명으로 사용할 수 없는 문자 제거
       return `${baseName}.webm`; // webm 확장자 사용
@@ -186,6 +193,26 @@ export default {
       this.$emit('update-recording-filename', { id: id, newFilename: newFilenameTrimmed });
       this.editingMeetingId = null; // 수정 모드 종료
       this.displayMessageModal('이름 변경 완료', `녹음본 이름이 '${newFilenameTrimmed}'(으)로 변경되었습니다.`);
+    },
+
+    // 텍스트 다운로드 버튼 클릭 시
+    downloadTextFile(meeting) {
+      if (!meeting.transcription || meeting.transcription === '텍스트 변환 결과 없음') {
+        this.displayMessageModal('텍스트 없음', '이 녹음본에 대한 변환된 텍스트가 없습니다.');
+        return;
+      }
+
+      const textFilename = `${meeting.title.replace(/[\\/:*?"<>|]/g, '_')}.txt`;
+      const textBlob = new Blob([meeting.transcription], { type: 'text/plain;charset=utf-8' });
+      
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(textBlob);
+      link.download = textFilename;
+      link.click();
+      URL.revokeObjectURL(link.href); // URL 해제
+      
+      this.displayMessageModal('다운로드 완료', `'${textFilename}' 텍스트 파일이 다운로드되었습니다.`);
+      console.log(`텍스트 다운로드됨: ${textFilename}`);
     },
 
     // Custom Message Modal (for errors/information) - replacing alert()
@@ -302,9 +329,11 @@ h2 {
 .action-button.download:hover {
   background-color: #218838;
 }
-
-.action-button.edit:hover {
-  background-color: #e0a800;
+.action-button.text-download { /* 텍스트 다운로드 버튼 스타일 추가 */
+  background-color: #007bff; /* 파란색 계열 */
+}
+.action-button.text-download:hover {
+  background-color: #0056b3;
 }
 .action-button.delete {
   background-color: #dc3545;

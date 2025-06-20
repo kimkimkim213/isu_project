@@ -1,32 +1,31 @@
 <template>
   <div class="recorder">
     <button
-      :class="['record-button', { recording: isRecording, 'options-active': showOptions }]"
+      :class="['record-button', { 'recording': isRecording, 'options-active': showOptions }]"
       @click="handleRecordButtonClick"
     >
       <span
-        :class="['icon', { 'is-recording': isRecording, 'shifted-active': showOptions }]"
+        :class="['icon', { 'is-recording': isRecording, 'shifted-active': showOptions }]
+        "
         @click.stop="handleIconClick"
       ></span>
 
       <div v-if="showOptions && !showFilenamePrompt" class="options-container">
         <button class="option-button" @click.stop="promptForSave">녹음본 저장하고 종료하기</button>
-        <button class="option-button" @click.stop="discardAndStopRecording">
-          녹음본 저장하지 않고 종료하기
-        </button>
+        <button class="option-button" @click.stop="discardAndStopRecording">녹음본 저장하지 않고 종료하기</button>
       </div>
     </button>
 
-    <p v-if="isRecording && !showOptions && !showFilenamePrompt" class="recording-status-text">
+    <p v-if="isRecording && !showOptions && !showFilenamePrompt && !isTranscribing" class="recording-status-text">
       녹음중...
     </p>
 
-    <div class="volume-bar-container" v-if="isRecording && !showOptions">
+    <div class="volume-bar-container" v-if="isRecording && !showOptions && !isTranscribing">
       <div class="volume-bar" :style="{ width: volume + '%' }"></div>
     </div>
     <!-- Dim overlay for options and filename prompt -->
     <div
-      v-if="showOptions || showFilenamePrompt || showMessageModal"
+      v-if="showOptions || showFilenamePrompt || showMessageModal || isTranscribing"
       class="dim-overlay"
       @click="handleOverlayClick"
     ></div>
@@ -55,6 +54,15 @@
         <button @click="closeMessageModal">확인</button>
       </div>
     </div>
+
+    <!-- Transcription Loading Modal -->
+    <div v-if="isTranscribing" class="transcribing-modal-overlay">
+      <div class="transcribing-modal-content">
+        <div class="spinner"></div>
+        <p>음성을 텍스트로 변환 중...</p>
+        <p class="small-text">시간이 다소 소요될 수 있습니다.</p>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -64,12 +72,13 @@ import { ref } from "vue";
 const showFilenamePrompt = ref(false);
 const filenameInput = ref("");
 const isRecording = ref(false);
-const mediaRecorder = ref(null);
+let mediaRecorder = null; // Changed to let to allow null assignment
 const audioChunks = ref([]);
 const emit = defineEmits(["recording-finished"]);
 
 const showOptions = ref(false);
 const volume = ref(0);
+const isTranscribing = ref(false); // 텍스트 변환 중 상태
 
 let currentStream = null;
 let analyser = null;
@@ -77,9 +86,21 @@ let dataArray = null;
 let audioContext = null;
 let animationFrameId = null;
 
+// App.vue에서 이미 정의된 blobToBase64 헬퍼 함수를 여기에 복사/붙여넣기
+// 또는 별도의 유틸리티 파일로 분리하여 import하는 것이 좋습니다.
+// 여기서는 RecoderPanel.vue 내부에서만 사용된다고 가정하고 복사합니다.
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob); // Read as Base64 Data URL
+  });
+}
+
 // 붉은 원 (icon) 클릭 시 호출될 함수
 function handleIconClick() {
-  if (showMessageModal.value) return; // 메시지 모달이 떠있으면 다른 동작 방지
+  if (showMessageModal.value || isTranscribing.value) return; // 메시지/변환 모달이 떠있으면 다른 동작 방지
 
   if (showFilenamePrompt.value) {
     // 파일명 입력 팝업이 떠 있는 상태에서 아이콘 클릭 시: 팝업 닫기 (취소)
@@ -95,7 +116,7 @@ function handleIconClick() {
 
 // record-button 배경 자체를 클릭 시 호출될 함수
 function handleRecordButtonClick() {
-  if (showMessageModal.value) return; // 메시지 모달이 떠있으면 다른 동작 방지
+  if (showMessageModal.value || isTranscribing.value) return; // 메시지/변환 모달이 떠있으면 다른 동작 방지
 
   if (!showOptions.value && !showFilenamePrompt.value) {
     toggleRecording();
@@ -108,6 +129,9 @@ function handleRecordButtonClick() {
 function handleOverlayClick() {
   if (showMessageModal.value) {
     closeMessageModal();
+  } else if (isTranscribing.value) {
+    // 변환 중에는 오버레이 클릭으로 닫히지 않도록 함 (작업 중단 방지)
+    return; 
   } else if (showFilenamePrompt.value) {
     cancelFilenamePrompt();
   } else if (showOptions.value) {
@@ -117,7 +141,7 @@ function handleOverlayClick() {
 
 async function toggleRecording() {
   // 팝업이 활성화된 상태에서는 이 함수가 직접 호출되지 않도록 방어 로직
-  if (showOptions.value || showFilenamePrompt.value || showMessageModal.value) {
+  if (showOptions.value || showFilenamePrompt.value || showMessageModal.value || isTranscribing.value) {
     return;
   }
 
@@ -126,29 +150,30 @@ async function toggleRecording() {
     try {
       currentStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       startVolumeMeter(currentStream);
-      mediaRecorder.value = new MediaRecorder(currentStream);
+      mediaRecorder = new MediaRecorder(currentStream);
 
-      mediaRecorder.value.ondataavailable = (event) => {
+      mediaRecorder.ondataavailable = (event) => {
         audioChunks.value.push(event.data);
       };
 
-      mediaRecorder.value.onstop = () => {
+      mediaRecorder.onstop = () => {
         if (currentStream) {
           currentStream.getTracks().forEach((track) => track.stop());
           currentStream = null;
         }
+        stopVolumeMeter(); // 녹음 중지 시 볼륨 미터 중지
       };
 
-      mediaRecorder.value.start(100);
+      mediaRecorder.start(100);
       isRecording.value = true;
       console.log("녹음 시작됨");
     } catch (error) {
       console.error("마이크 접근 오류:", error);
-      // Custom modal instead of alert
       displayMessageModal(
         "마이크 접근 오류",
         "마이크 접근 권한이 필요합니다. 브라우저 설정에서 마이크 접근을 허용해주세요."
       );
+      resetRecordingState(); // 오류 시 상태 초기화
     }
   } else {
     // 녹음 중일 때 버튼을 누르면 팝업 표시 (저장/취소 옵션)
@@ -158,13 +183,12 @@ async function toggleRecording() {
 }
 
 // "녹음본 저장하고 종료하기" 버튼 클릭 시 호출
-function promptForSave() {
-  if (mediaRecorder.value && mediaRecorder.value.state === "recording") {
-    mediaRecorder.value.stop(); // 녹음 중지. ondataavailable 이벤트 발생
+async function promptForSave() {
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop(); // 녹음 중지. ondataavailable 이벤트 발생
     console.log("녹음 중지됨. 파일 이름 입력 대기.");
   }
-  stopVolumeMeter();
-  // 데이터가 있는지 확인
+  
   if (audioChunks.value.length === 0) {
     console.error("ERROR: No audio chunks were collected! 녹음된 데이터가 없습니다.");
     displayMessageModal(
@@ -193,7 +217,7 @@ function promptForSave() {
 }
 
 // 파일 이름 입력 후 "저장" 버튼 클릭 시 호출
-function confirmSaveRecording() {
+async function confirmSaveRecording() {
   if (audioChunks.value.length === 0) {
     console.error("ERROR: Cannot save. No audio chunks available.");
     displayMessageModal("저장 오류", "저장할 녹음 데이터가 없습니다.");
@@ -213,24 +237,37 @@ function confirmSaveRecording() {
     return;
   }
 
-  const audioUrl = URL.createObjectURL(audioBlob);
-  // 입력된 파일명이 없으면 기본 파일명 사용
-  const filename =
-    filenameInput.value.trim() ||
-    `회의록_${new Date().toLocaleString("ko-KR").replace(/[:.]/g, "-")}`;
+  // 파일명 확정
+  const filename = filenameInput.value.trim() || `회의록_${new Date().toLocaleString("ko-KR").replace(/[:.]/g, "-")}`;
 
-  emit("recording-finished", { audioUrl, audioBlob, filename }); // App.vue로 Blob 데이터와 파일명 함께 전달
+  // 텍스트 변환 시작 알림 및 스피너 표시
+  isTranscribing.value = true;
+  showFilenamePrompt.value = false; // 파일명 입력 팝업 닫기
+  
+  let transcription = '';
+  try {
+    transcription = await sendToSpeechAPI(audioBlob);
+    console.log("전사 결과:", transcription);
+    displayMessageModal('텍스트 변환 완료', '음성 파일이 텍스트로 성공적으로 변환되었습니다!');
+  } catch (error) {
+    console.error('텍스트 변환 오류:', error);
+    displayMessageModal('텍스트 변환 오류', '음성 텍스트 변환 중 문제가 발생했습니다. 백엔드 서버를 확인해주세요.');
+    transcription = '텍스트 변환 실패: ' + (error.message || '알 수 없는 오류');
+  } finally {
+    isTranscribing.value = false; // 변환 완료 (성공/실패 무관)
+  }
+
+  // App.vue로 Blob 데이터, 파일명, 전사 결과 함께 전달
+  emit('recording-finished', { audioBlob, filename, transcription }); 
   console.log(`녹음본 "${filename}" 저장 및 종료`);
-  displayMessageModal("저장 완료", `"${filename}" 녹음본이 저장되었습니다!`);
   resetRecordingState(); // 상태 초기화
 }
 
 // 팝업 - "녹음본 저장하지 않고 종료하기" (또는 파일명 입력 취소 시)
 function discardAndStopRecording() {
-  if (mediaRecorder.value && mediaRecorder.value.state === "recording") {
-    mediaRecorder.value.stop();
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
   }
-  stopVolumeMeter();
   audioChunks.value = []; // 데이터 버림
   console.log("녹음본 저장하지 않고 종료");
   displayMessageModal("녹음 삭제", "녹음본이 저장되지 않고 삭제되었습니다.");
@@ -258,11 +295,13 @@ function resetRecordingState() {
   showFilenamePrompt.value = false;
   filenameInput.value = "";
   audioChunks.value = [];
+  isTranscribing.value = false; // 변환 상태도 초기화
   if (currentStream) {
     currentStream.getTracks().forEach((track) => track.stop());
     currentStream = null;
   }
-  mediaRecorder.value = null; // Recorder 객체도 리셋하여 새 녹음 준비
+  mediaRecorder = null; // Recorder 객체도 리셋하여 새 녹음 준비
+  stopVolumeMeter(); // 볼륨 미터 중지
 }
 
 // Custom Message Modal (for errors/information) - replacing alert()
@@ -282,7 +321,11 @@ function closeMessageModal() {
   messageModalContent.value = "";
 }
 
+// ===== Web Audio API for Volume Meter =====
 function startVolumeMeter(stream) {
+  if (audioContext) { // 기존 컨텍스트가 있으면 닫기
+    audioContext.close().catch(e => console.error("Error closing existing audio context:", e));
+  }
   audioContext = new (window.AudioContext || window.webkitAudioContext)();
   const source = audioContext.createMediaStreamSource(stream);
   analyser = audioContext.createAnalyser();
@@ -300,7 +343,7 @@ function startVolumeMeter(stream) {
       sum += dataArray[i];
     }
     const avg = sum / bufferLength;
-    volume.value = Math.min(100, Math.round((avg / 255) * 100));
+    volume.value = Math.min(100, Math.round((avg / 255) * 100)); // 0-100% 스케일
 
     animationFrameId = requestAnimationFrame(updateVolume);
   };
@@ -309,14 +352,53 @@ function startVolumeMeter(stream) {
 }
 
 function stopVolumeMeter() {
-  cancelAnimationFrame(animationFrameId);
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId);
+  }
   if (audioContext) {
-    audioContext.close();
-    audioContext = null;
+    audioContext.close().then(() => {
+        audioContext = null;
+        analyser = null;
+        dataArray = null;
+    }).catch(e => console.error("Error closing audio context:", e));
   }
   volume.value = 0;
 }
+
+// ===== Google Speech-to-Text API 호출 (백엔드 프록시를 통해) =====
+async function sendToSpeechAPI(audioBlob) {
+  // `String.fromCharCode(...new Uint8Array(arrayBuffer))` 대신
+  // App.vue에 있는 blobToBase64 헬퍼 함수를 사용하여 Base64로 안전하게 변환
+  const base64Audio = await blobToBase64(audioBlob);
+
+  try {
+    const res = await fetch('http://localhost:3001/api/transcribe', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ audio: base64Audio }),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`STT API error: ${res.status} - ${errorText}`);
+    }
+
+    const data = await res.json();
+    if (data.transcription) {
+      return data.transcription;
+    } else {
+      console.warn('STT API response missing transcription:', data);
+      return '변환된 텍스트가 없습니다.';
+    }
+  } catch (error) {
+    console.error('sendToSpeechAPI 호출 실패:', error);
+    throw error; // 에러를 다시 던져서 상위 호출자에서 처리하도록 함
+  }
+}
 </script>
+
 
 <style scoped>
 .recorder {
