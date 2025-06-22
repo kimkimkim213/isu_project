@@ -11,6 +11,7 @@
     "@google-cloud/speech": "^7.1.0",
     "@vueuse/core": "^13.3.0",
     "core-js": "^3.8.3",
+    "cors": "^2.8.5",
     "express": "^5.1.0",
     "multer": "^2.0.1",
     "vue": "^3.2.13"
