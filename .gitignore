@@ -7,6 +7,10 @@ dist/
 .env.local
 .env.*.local
 *.env
+/key.env.local
+/key.env.*.local
+*key.env
+key.json
 # 빌드 결과물
 build/
 coverage/

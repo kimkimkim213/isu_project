@@ -8,7 +8,8 @@ const cors = require('cors');
 const app = express();
 const PORT = 3001;
 
-dotenv.config({ path: '.env' });
+require('dotenv').config({ path: './key.env' });
+
 
 const speechClient = new SpeechClient({
   keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
