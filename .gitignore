@@ -11,6 +11,10 @@ dist/
 /key.env.*.local
 *key.env
 key.json
+/key.json
+*/key.json
+/credentials/key.json
+
 # 빌드 결과물
 build/
 coverage/
