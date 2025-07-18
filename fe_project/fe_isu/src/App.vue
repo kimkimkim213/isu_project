@@ -40,6 +40,7 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
 import RecorderPanel from '@/components/RecorderPanel.vue'
 import PastMeetingList from '@/components/PastMeetingList.vue'
 
+
 // Blob 데이터를 Base64 문자열로 인코딩/디코딩하는 헬퍼 함수
 function blobToBase64(blob) {
   return new Promise((resolve, reject) => {
