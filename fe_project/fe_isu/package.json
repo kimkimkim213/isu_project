@@ -12,6 +12,7 @@
     "@grpc/grpc-js": "^1.13.4",
     "@grpc/proto-loader": "^0.7.15",
     "@vueuse/core": "^13.3.0",
+    "axios": "^1.10.0",
     "core-js": "^3.8.3",
     "cors": "^2.8.5",
     "express": "^5.1.0",
