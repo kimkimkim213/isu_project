@@ -45,6 +45,8 @@ app.post('/api/transcribe', async (req, res) => {
       encoding: encoding,
       sampleRateHertz: sampleRate,
       languageCode: 'ko-KR',
+      enableSpeakerDiarization: true, // 화자 분리 활성화
+      diarizationSpeakerCount: 2 // 예상 화자 수 설정 (필요시 조정 가능)
     };
 
     console.log('Sending request to Google with config:', JSON.stringify(config, null, 2));
