@@ -68,6 +68,38 @@
 
 <script setup>
 import { ref } from "vue";
+import { onMounted } from 'vue';
+
+// ...existing code...
+
+// Helper function to generate a unique ID
+function generateUniqueId() {
+  return Date.now().toString(36) + Math.random().toString(36).substring(2);
+}
+function base64ToBlob(base64, mimeType) {
+  if (!base64 || typeof base64 !== 'string') {
+    console.error('Invalid base64 string provided to base64ToBlob:', base64);
+    return null;
+  }
+  const parts = base64.split(';base64,');
+  if (parts.length < 2) {
+    console.error('Base64 string format is incorrect:', base64);
+    return null;
+  }
+  const contentType = parts[0].split(':')[1] || mimeType;
+  try {
+    const raw = window.atob(parts[1]);
+    const rawLength = raw.length;
+    const uInt8Array = new Uint8Array(rawLength);
+    for (let i = 0; i < rawLength; ++i) {
+      uInt8Array[i] = raw.charCodeAt(i);
+    }
+    return new Blob([uInt8Array], { type: contentType });
+  } catch (e) {
+    console.error('Error decoding base64 to blob:', e, base64);
+    return null;
+  }
+}
 
 const showFilenamePrompt = ref(false);
 const filenameInput = ref("");
@@ -429,6 +461,47 @@ async function sendToSpeechAPI(audioBlob) {
     reader.readAsDataURL(audioBlob);
   });
 }
+
+// 기존의 저장된 녹음 목록 불러오기 (로컬 스토리지 등에서)
+const storedRecordings = ref([]); // 여기에 저장된 녹음 데이터 배열이 들어옵니다.
+
+// recordings 배열: 저장된 녹음 목록
+const recordings = ref([]);
+
+// 저장된 녹음 불러오기 함수
+function loadStoredRecordings() {
+  // 여기서는 예시로 로컬 스토리지에서 불러온다고 가정합니다.
+  const stored = localStorage.getItem('recordings');
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored);
+      storedRecordings.value = parsed;
+      // parsed 배열을 recordings 배열에 추가
+      parsed.forEach(item => {
+        if (item.audioBase64 && item.audioType) {
+          const blob = base64ToBlob(item.audioBase64, item.audioType);
+          if (blob) {
+            recordings.value.push({
+              id: item.id || generateUniqueId(),
+              timestamp: item.timestamp,
+              audioBlob: blob,
+              filename: item.filename,
+              transcription: item.transcription // 추가
+            });
+          }
+        }
+      });
+      console.log('Stored recordings loaded:', recordings.value);
+    } catch (error) {
+      console.error('Error loading stored recordings:', error);
+    }
+  }
+}
+
+// 컴포넌트가 마운트될 때 저장된 녹음 불러오기
+onMounted(() => {
+  loadStoredRecordings();
+});
 </script>
 
 <style scoped>

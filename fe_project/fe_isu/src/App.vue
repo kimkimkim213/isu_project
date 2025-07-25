@@ -136,19 +136,21 @@ watch(recordings, async (newRecordings) => {
 
 // RecorderPanel로부터 `data` 객체를 받음
 function handleRecordingFinished(data) {
-  const { audioBlob, filename } = data; 
+  const { audioBlob, filename, transcription } = data; 
   const timestamp = new Date().toISOString();
 
   console.log('handleRecordingFinished: Received audioBlob:', audioBlob);
   console.log('handleRecordingFinished: Is it a Blob?', audioBlob instanceof Blob);
   console.log('handleRecordingFinished: Received filename:', filename);
+  console.log('handleRecordingFinished: Received transcription:', transcription);
 
 
   recordings.value.push({
     id: generateUniqueId(), // 새 녹음본에 고유 ID 생성
     audioBlob: audioBlob, 
     timestamp: timestamp,
-    filename: filename || `회의록_${new Date(timestamp).toLocaleString().replace(/[:.]/g, '-')}` 
+    filename: filename || `회의록_${new Date(timestamp).toLocaleString().replace(/[:.]/g, '-')}`,
+    transcription: transcription // transcription 추가
   });
 }
 
