@@ -6,6 +6,12 @@ node_modules
 # local env files
 .env.local
 .env.*.local
+/key.env.*.local
+*key.env
+key.json
+/key.json
+*/key.json
+/credentials/key.json
 
 # Log files
 npm-debug.log*

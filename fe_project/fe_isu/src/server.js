@@ -20,23 +20,40 @@ app.use(bodyParser.json({ limit: '10mb' }));
 
 app.post('/api/transcribe', async (req, res) => {
   try {
-    const base64Audio = req.body.audio;
-    const audioBuffer = Buffer.from(base64Audio, 'base64');
+    const { audio: base64Audio, sampleRate, mimeType } = req.body;
 
-    // 오디오 버퍼의 크기를 로그로 출력 (디버깅 목적)
+    if (!base64Audio || !sampleRate || !mimeType) {
+      return res.status(400).json({ error: '필수 정보(audio, sampleRate, mimeType)가 누락되었습니다.' });
+    }
+
+    const audioBuffer = Buffer.from(base64Audio, 'base64');
     console.log('Received audio buffer size:', audioBuffer.length, 'bytes');
+    console.log(`Received audio properties: Sample Rate=${sampleRate}, Mime Type=${mimeType}`);
 
     const audio = {
       content: audioBuffer.toString('base64'),
     };
 
+    let encoding = 'ENCODING_UNSPECIFIED';
+    if (mimeType.includes('webm')) {
+        encoding = 'WEBM_OPUS';
+    } else if (mimeType.includes('wav')) {
+        encoding = 'WAV';
+    }
+
     const config = {
-      encoding: 'WEBM_OPUS',
-      sampleRateHertz: 48000,
+      encoding: encoding,
+      sampleRateHertz: sampleRate,
       languageCode: 'ko-KR',
     };
 
+    console.log('Sending request to Google with config:', JSON.stringify(config, null, 2));
+
+    console.log('Sending request to Google with config:', JSON.stringify(config, null, 2));
+
     const [response] = await speechClient.recognize({ audio, config });
+
+    console.log('Google Speech-to-Text API 응답:', JSON.stringify(response, null, 2));
 
     console.log('Google Speech-to-Text API 응답:', JSON.stringify(response, null, 2));
 

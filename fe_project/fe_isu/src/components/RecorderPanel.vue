@@ -111,6 +111,8 @@ const emit = defineEmits(["recording-finished"]);
 const showOptions = ref(false);
 const volume = ref(0);
 const isTranscribing = ref(false); // 텍스트 변환 중 상태
+const currentMimeType = ref(''); // 녹음에 사용된 MIME 타입 저장
+const currentSampleRate = ref(0); // 녹음에 사용된 샘플링 레이트 저장
 
 let currentStream = null;
 let analyser = null;
@@ -169,15 +171,21 @@ async function toggleRecording() {
     // 녹음 시작 로직
     try {
       currentStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      startVolumeMeter(currentStream); // 이 함수 내에서 audioContext.sampleRate를 로그할 것입니다.
       
+      // Web Audio API를 사용해 정확한 샘플링 레이트를 얻습니다.
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      currentSampleRate.value = audioContext.sampleRate; // 실제 샘플링 레이트 저장
+      console.log('AudioContext Sample Rate:', currentSampleRate.value);
+      startVolumeMeter(currentStream, audioContext); // audioContext를 넘겨주도록 수정
+
       // MediaRecorder 생성 전, 지원되는 MIME 타입 확인 (디버깅)
       const supportedMimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
-      console.log('Supported MIME Type for MediaRecorder:', supportedMimeType);
+      currentMimeType.value = supportedMimeType; // 실제 MIME 타입 저장
+      console.log('Supported MIME Type for MediaRecorder:', currentMimeType.value);
 
       // 미디어 레코더 옵션 지정
       mediaRecorder.value = new MediaRecorder(currentStream, {
-        mimeType: supportedMimeType, // 감지된 지원 타입 사용
+        mimeType: currentMimeType.value, // 감지된 지원 타입 사용
         audioBitsPerSecond: 64000 // 오디오 비트레이트를 명시적으로 64kbps로 설정 (더 안정적)
       });
 
@@ -368,11 +376,9 @@ function closeMessageModal() {
 }
 
 // ===== Web Audio API for Volume Meter =====
-function startVolumeMeter(stream) {
-  if (audioContext) { // 기존 컨텍스트가 있으면 닫기
-    audioContext.close();
-  }
-  audioContext = new (window.AudioContext || window.webkitAudioContext)();
+function startVolumeMeter(stream, context) { // context 인자 추가
+  if (!context) return;
+  audioContext = context; // 전달받은 context 사용
   
   // 실제 오디오 컨텍스트의 샘플 레이트 로그
   console.log('AudioContext Sample Rate:', audioContext.sampleRate); 
@@ -430,7 +436,11 @@ async function sendToSpeechAPI(audioBlob) {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ audio: base64Audio }),
+          body: JSON.stringify({ 
+            audio: base64Audio,
+            sampleRate: currentSampleRate.value,
+            mimeType: currentMimeType.value 
+          }),
         });
 
         if (!res.ok) {
