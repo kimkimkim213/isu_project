@@ -22,23 +22,34 @@
         <!-- 테마 전환 버튼은 제거되었습니다. -->
       </div>
     </header>
+    
+    <div class = "api_box"> 선택된 API: {{ selectapi }}
+      <select v-model = "selectapi">
+        <option value="none" disabled>전사 API 선택</option>
+        <option value="google">Google</option>
+        <option value="whisper">Whisper</option>
+      </select>
+    </div>
 
     <main class="main-content">
-      <RecorderPanel v-if="activeTab === 'current'" @recording-finished="handleRecordingFinished" />
+      <RecorderPanel v-if="activeTab === 'current'"  @recording-finished="handleRecordingFinished" />
       <PastMeetingList 
         v-else 
         :recordings="recordings" 
         @delete-recording="handleDeleteRecording"
         @update-recording-filename="handleUpdateRecordingFilename"
       />
+      
     </main>
   </div>
+  
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import RecorderPanel from '@/components/RecorderPanel.vue'
 import PastMeetingList from '@/components/PastMeetingList.vue'
+
 
 
 // Blob 데이터를 Base64 문자열로 인코딩/디코딩하는 헬퍼 함수
@@ -169,7 +180,7 @@ function handleUpdateRecordingFilename({ id, newFilename }) {
   });
 }
 
-// 다크 모드/화이트 모드 상태 관리 및 관련 로직이 제거되었습니다.
+
 
 onMounted(() => {
   // 현재는 마운트 시 실행할 코드가 없습니다.
@@ -272,6 +283,16 @@ body {
   white-space: nowrap;
   flex-shrink: 0;
   transition: color 0.3s ease;
+}
+.api_box {
+  height: auto;
+  position: fixed;
+  top: 100px; /* 헤더 아래에 위치하도록 조정 */
+  right: 0;
+  padding: 10px;
+  background-color: #f0f0f0; /* 배경색 */
+  border: 1px solid #ccc; /* 테두리 */
+  z-index: 1001; /* 헤더보다 위에 표시되도록 */
 }
 
 .tab-button.active {
