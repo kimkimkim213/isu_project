@@ -23,16 +23,10 @@
       </div>
     </header>
     
-    <div class = "api_box"> 선택된 API: {{ selectapi }}
-      <select v-model = "selectapi">
-        <option value="none" disabled>전사 API 선택</option>
-        <option value="google">Google</option>
-        <option value="whisper">Whisper</option>
-      </select>
-    </div>
+
 
     <main class="main-content">
-      <RecorderPanel v-if="activeTab === 'current'"  @recording-finished="handleRecordingFinished" />
+      <RecorderPanel v-if="activeTab === 'current'" @recording-finished="handleRecordingFinished" />
       <PastMeetingList 
         v-else 
         :recordings="recordings" 
