@@ -84,6 +84,9 @@
           <button class="prompt-button download" @click="downloadTranscriptionAsFile">
             파일로 다운로드 (.txt)
           </button>
+          <button class = "prompt-button">
+            요약본으로 정리
+          </button>
           <button class="prompt-button cancel" @click="closeTranscriptionModal">
             닫기
           </button>
@@ -263,6 +266,8 @@ export default {
       this.currentTranscriptionText = '';
       this.currentTranscriptionFilename = '';
     },
+
+
 
     // Custom Message Modal (for errors/information) - replacing alert()
     displayMessageModal(title, content, type = 'info') {
