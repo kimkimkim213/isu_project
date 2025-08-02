@@ -1,6 +1,6 @@
 <template>
   <div class="meeting-list">
-    <h2>지난 회의 목록</h2>
+    <h2>지난 대화 목록</h2>
 
     <div
       v-for="meeting in meetings"
@@ -58,15 +58,15 @@
         </button>
       </div>
     </div>
-    <p v-if="meetings.length === 0" class="no-meetings-message">저장된 지난 회의가 없습니다.</p>
+    <p v-if="meetings.length === 0" class="no-meetings-message">저장된 대화가 없습니다.</p>
 
-    <!-- Custom Message Modal (삭제 확인, 정보 메시지 등) -->
+    <!-- Custom Message Modal ( 삭제 확인, 정보 메시지 등) -->
     <div v-if="showMessageModal" class="message-modal-overlay">
       <div class="message-modal-content">
         <h3>{{ messageModalTitle }}</h3>
         <p>{{ messageModalContent }}</p>
         <div class="modal-buttons" v-if="messageModalType === 'confirmDelete'">
-            <button @click="executeDeleteMeeting" class="confirm-button">삭제</button>
+            <button @click="executeDeleteMeeting" class="confirm-button"> 삭제</button>
             <button @click="closeMessageModal" class="cancel-button">취소</button>
         </div>
         <button v-else @click="closeMessageModal" class="ok-button">확인</button>
@@ -76,21 +76,50 @@
     <!-- Transcription Preview Modal -->
     <div v-if="showTranscriptionModal" class="transcription-modal-overlay">
       <div class="transcription-modal-content">
-        <h3>전사본 미리보기</h3>
-        <div class="transcription-text-area">
-          <p>{{ currentTranscriptionText }}</p>
+        <h3>{{ currentMeeting.title }}</h3>
+
+        <!-- Initial Options (Full Text / Summarize) -->
+        <div v-if="!isTextViewerVisible" class="initial-options">
+          <div class="option-box view-full" @click="showFullTextView">
+            <h4>전체 대화 보기</h4>
+          </div>
+          <div class="option-box summarize" @click="requestSummary">
+            <div v-if="isSummarizing && summarizingMeetingId === currentMeeting.id" class="loader"></div>
+            <h4 v-else>요약하기</h4>
+          </div>
         </div>
-        <div class="modal-buttons">
-          <button class="prompt-button download" @click="downloadTranscriptionAsFile">
-            파일로 다운로드 (.txt)
-          </button>
-          <button class = "prompt-button">
-            요약본으로 정리
-          </button>
-          <button class="prompt-button cancel" @click="closeTranscriptionModal">
-            닫기
-          </button>
+
+        <!-- Summary Viewer -->
+        <div v-if="showSummary" class="summary-viewer">
+          <div class="summary-text-area">
+            <p>{{ summaryText }}</p>
+          </div>
+          <div class="modal-buttons">
+            <button class="prompt-button back" @click="$emit('close-summary')">
+              닫기
+            </button>
+          </div>
         </div>
+
+        <!-- Text Viewer -->
+        <div v-if="isTextViewerVisible && !showSummary" class="text-viewer">
+          <div class="transcription-text-area">
+            <p>{{ currentTranscriptionText }}</p>
+          </div>
+          <div class="modal-buttons">
+            <button class="prompt-button download" @click="downloadTranscriptionAsFile">
+              파일로 다운로드 (.txt)
+            </button>
+          </div>
+        </div>
+
+        <!-- Common Close/Back Button -->
+        <button 
+          class="prompt-button cancel"
+          @click="isTextViewerVisible ? goBackToInitialOptions() : closeTranscriptionModal()"
+        >
+          {{ isTextViewerVisible ? '뒤로 가기' : '닫기' }}
+        </button>
       </div>
     </div>
   </div>
@@ -103,9 +132,25 @@ export default {
     recordings: { // App.vue에서 전달받을 recordings prop
       type: Array,
       default: () => []
+    },
+    isSummarizing: {
+      type: Boolean,
+      default: false
+    },
+    summarizingMeetingId: {
+      type: [String, Number],
+      default: null
+    },
+    summaryText: {
+      type: String,
+      default: ''
+    },
+    showSummary: {
+      type: Boolean,
+      default: false
     }
   },
-  emits: ['delete-recording', 'update-recording-filename'], // 삭제 및 이름 수정 이벤트 추가
+  emits: ['delete-recording', 'update-recording-filename', 'request-summary'], // 삭제 및 이름 수정 이벤트 추가
 
   data() {
     return {
@@ -124,6 +169,8 @@ export default {
       showTranscriptionModal: false,
       currentTranscriptionText: '',
       currentTranscriptionFilename: '', // 다운로드 시 사용할 파일명
+      isTextViewerVisible: false, // 전문 보기 활성화 상태
+      currentMeeting: null, // 현재 선택된 회의 정보
     };
   },
   watch: {
@@ -143,7 +190,7 @@ export default {
           const date = new Date(rec.timestamp);
           const meetingItem = { // 새로 생성될 meeting 객체
             id: rec.id, // App.vue에서 전달받은 고유 ID 사용
-            title: rec.filename || `회의 녹음본 ${date.toLocaleString()}`, // 파일명이 있으면 파일명 사용, 없으면 기존 방식 사용
+            title: rec.filename || `녹음본 ${date.toLocaleString()}`, // 파일명이 있으면 파일명 사용, 없으면 기존 방식 사용
             date: date.toLocaleString(),
             audioUrl: audioUrl,
             originalTimestamp: rec.timestamp, // 파일 이름 생성을 위해 원본 타임스탬프 저장
@@ -228,17 +275,20 @@ export default {
 
     // 텍스트 미리보기 버튼 클릭 시
     previewTranscription(meeting) {
-      console.log("PastMeetingList: previewTranscription 호출. 회의 항목:", meeting); // Debug log 3
-      console.log(`PastMeetingList: 미리보기 텍스트: '${meeting.transcription}' (타입: ${typeof meeting.transcription})`); // Debug log 4
-
       if (!meeting.transcription || meeting.transcription === '텍스트 변환 결과 없음' || meeting.transcription.trim() === '') {
         this.displayMessageModal('텍스트 없음', '이 녹음본에 대한 변환된 텍스트가 없습니다.');
         return;
       }
+      this.currentMeeting = meeting;
       this.currentTranscriptionText = meeting.transcription;
-      // 다운로드 시 사용할 파일명도 미리 저장
       this.currentTranscriptionFilename = `${meeting.title.replace(/[\\/:*?"<>|]/g, '_')}.txt`; 
+      this.isTextViewerVisible = false; // 항상 초기 화면으로 시작
       this.showTranscriptionModal = true;
+    },
+
+    // 전문 보기 화면으로 전환
+    showFullTextView() {
+      this.isTextViewerVisible = true;
     },
 
     // 미리보기 모달에서 파일 다운로드 버튼 클릭 시
@@ -257,7 +307,6 @@ export default {
       URL.revokeObjectURL(link.href); // URL 해제
       
       this.displayMessageModal('다운로드 완료', `'${this.currentTranscriptionFilename}' 텍스트 파일이 다운로드되었습니다.`);
-      this.closeTranscriptionModal(); // 다운로드 후 모달 닫기
     },
 
     // 미리보기 모달 닫기
@@ -265,9 +314,17 @@ export default {
       this.showTranscriptionModal = false;
       this.currentTranscriptionText = '';
       this.currentTranscriptionFilename = '';
+      this.isTextViewerVisible = false; // 상태 리셋
     },
 
+    // 이전 화면으로 돌아가기
+    goBackToInitialOptions() {
+      this.isTextViewerVisible = false;
+    },
 
+    requestSummary() {
+      this.$emit('request-summary', this.currentMeeting);
+    },
 
     // Custom Message Modal (for errors/information) - replacing alert()
     displayMessageModal(title, content, type = 'info') {
@@ -376,6 +433,7 @@ h2 {
   transition: background-color 0.2s ease;
   border: none;
   cursor: pointer;
+  
 }
 .action-button.download {
   background-color: #28a745;
@@ -402,7 +460,7 @@ h2 {
   padding: 50px 0;
 }
 
-/* Custom Message Modal Styles - Reused from RecorderPanel for consistency */
+/* Custom Message Modal Styles */
 .message-modal-overlay {
   position: fixed;
   top: 0;
@@ -413,7 +471,7 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 30;
+  z-index: 1050;
 }
 
 .message-modal-content {
@@ -441,11 +499,12 @@ h2 {
   line-height: 1.5;
 }
 
-.modal-buttons {
+.message-modal-content .modal-buttons {
     display: flex;
     justify-content: center;
     gap: 15px;
     margin-top: 10px;
+    width: 100%;
 }
 
 .modal-buttons button, .ok-button {
@@ -486,69 +545,159 @@ h2 {
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.7); /* 어둡게 할 오버레이 */
+  background-color: rgba(0, 0, 0, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 35; /* 기존 메시지 모달보다 위에 */
+  z-index: 1050;
+  padding: 20px;
+  box-sizing: border-box;
 }
 
 .transcription-modal-content {
   background-color: white;
-  padding: 30px;
+  padding: 24px;
   border-radius: 12px;
-  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);
-  max-width: 600px; /* 더 넓게 */
-  width: 90%;
-  max-height: 80vh; /* 높이 제한 */
-  overflow-y: auto; /* 내용이 길면 스크롤 */
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.4);
+  width: 100%;
+  max-width: 800px;
+  height: 80vh;
+  max-height: 90%;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
 .transcription-modal-content h3 {
-  margin: 0;
-  color: #333;
-  font-size: 1.8em;
-  text-align: center;
+    margin: 0;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #e0e0e0;
+    text-align: center;
+    font-size: 1.5em;
+    color: #333;
+    flex-shrink: 0;
+}
+
+.initial-options {
+    flex-grow: 1;
+    display: flex;
+    gap: 20px;
+    overflow: hidden;
+}
+
+.option-box {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.2s;
+    color: white;
+}
+
+.option-box:hover {
+    transform: translateY(-5px);
+}
+
+.option-box.view-full {
+    background-color: #007bff;
+}
+.option-box.view-full:hover {
+    background-color: #0056b3;
+}
+
+.option-box.summarize {
+    background-color: #ff9800;
+}
+.option-box.summarize:hover {
+    background-color: #f57c00;
+}
+
+.option-box h4 {
+    font-size: 1.8em;
+    margin: 0;
+}
+
+.text-viewer {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow: hidden;
 }
 
 .transcription-text-area {
-  background-color: #f0f0f0;
-  border: 1px solid #ddd;
+  flex-grow: 1;
+  overflow-y: auto;
+  background-color: #f9f9f9;
+  border: 1px solid #e0e0e0;
   border-radius: 8px;
-  padding: 20px;
-  white-space: pre-wrap; /* 줄 바꿈 유지 */
-  word-wrap: break-word; /* 긴 단어 강제 줄 바꿈 */
-  font-size: 1.1em;
+  padding: 16px;
+  line-height: 1.6;
   color: #333;
-  flex-grow: 1; /* 남은 공간 차지 */
-  overflow-y: auto; /* 텍스트가 길어지면 스크롤 */
-  min-height: 150px; /* 최소 높이 */
-  max-height: 40vh; /* 최대 높이 */
 }
 
 .transcription-text-area p {
-  margin: 0; /* p 태그의 기본 마진 제거 */
+  margin: 0;
+  white-space: pre-wrap;
 }
 
-/* 미리보기 모달 내 버튼 스타일 */
-.transcription-modal-content .prompt-button {
-  /* prompt-button 스타일 재사용 */
-  width: auto; /* 기본 prompt-button의 90% 대신 자동 너비 */
-  min-width: 120px; /* 최소 너비 지정 */
+.text-viewer .modal-buttons {
+  display: flex;
+  justify-content: center;
+  flex-shrink: 0;
 }
-.transcription-modal-content .prompt-button.download {
-  background-color: #28a745; /* 다운로드 버튼은 녹색 */
+
+.prompt-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: 8px;
+  border: none;
+  font-size: 1.1em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+  color: white;
 }
-.transcription-modal-content .prompt-button.download:hover {
-  background-color: #218838;
+
+.prompt-button:hover {
+    transform: translateY(-2px);
 }
-.transcription-modal-content .prompt-button.cancel {
-  background-color: #6c757d; /* 닫기 버튼은 회색 */
+
+.prompt-button.download {
+  background-color: #4CAF50;
+  flex-grow: 1;
 }
-.transcription-modal-content .prompt-button.cancel:hover {
+.prompt-button.download:hover {
+  background-color: #45a049;
+}
+
+.transcription-modal-content > .prompt-button.cancel {
+  background-color: #6c757d;
+  flex-shrink: 0;
+  margin-top: auto; /* Push to the bottom */
+}
+.prompt-button.cancel:hover {
   background-color: #5a6268;
 }
+
+.loader {
+  border: 4px solid #f3f3f3; /* Light grey */
+  border-top: 4px solid #3498db; /* Blue */
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
 </style>
+
+

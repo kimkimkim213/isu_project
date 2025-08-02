@@ -6,8 +6,8 @@ node_modules
 # local env files
 .env.local
 .env.*.local
-/key.env.*.local
-*key.env
+/.env.*.local
+*.env
 key.json
 /key.json
 */key.json

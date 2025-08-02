@@ -4,12 +4,16 @@ const { SpeechClient } = require('@google-cloud/speech');
 const fs = require('fs');
 const dotenv = require('dotenv');
 const cors = require('cors');
+const OpenAI = require('openai');
 
 const app = express();
 const PORT = 3001;
 
-require('dotenv').config({ path: './key.env' });
+require('dotenv').config();
 
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 const speechClient = new SpeechClient({
   keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
@@ -17,6 +21,31 @@ const speechClient = new SpeechClient({
 
 app.use(cors());
 app.use(bodyParser.json({ limit: '10mb' }));
+
+app.post('/api/summarize', async (req, res) => {
+  try {
+    const { text } = req.body;
+
+    if (!text) {
+      return res.status(400).json({ error: '요약할 텍스트가 없습니다.' });
+    }
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4',
+      messages: [
+        { role: 'system', content: '주어지는 대화의 전문을 요약해 주세요.' },
+        { role: 'user', content: `대화:${text}` }
+      ],
+      max_tokens: 500,
+      temperature: 0.7
+    });
+
+    res.json({ summary: response.choices[0].message.content });
+  } catch (error) {
+    console.error('요약 중 오류:', error);
+    res.status(500).json({ error: '요약 실패', details: error.message });
+  }
+});
 
 app.post('/api/transcribe', async (req, res) => {
   try {

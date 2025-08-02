@@ -36,7 +36,7 @@
       <input
         type="text"
         v-model="filenameInput"
-        placeholder="예: 2024년 6월 회의록"
+        placeholder="예: 2024년 6월 대화록"
         class="filename-input"
         @keyup.enter="confirmSaveRecording"
       />
@@ -217,7 +217,7 @@ async function toggleRecording() {
               return;
           }
           // 기본 파일명 설정
-          filenameInput.value = `회의록_${new Date()
+          filenameInput.value = `대화록_${new Date()
             .toLocaleString("ko-KR", {
               year: "numeric",
               month: "2-digit",
@@ -292,7 +292,7 @@ async function confirmSaveRecording() {
 
 
   // 파일명 확정
-  const filename = filenameInput.value.trim() || `회의록_${new Date().toLocaleString("ko-KR").replace(/[:.]/g, "-")}`;
+  const filename = filenameInput.value.trim() || `대화록_${new Date().toLocaleString("ko-KR").replace(/[:.]/g, "-")}`;
 
   // 텍스트 변환 시작 알림 및 스피너 표시
   isTranscribing.value = true;

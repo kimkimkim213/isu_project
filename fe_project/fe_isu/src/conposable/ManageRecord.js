@@ -76,7 +76,6 @@ export function useRecordings() {
   });
 
   watch(recordings, async (newRecordings) => {
-    console.log('ManageRecord: watch - recordings 변경 감지. 새 녹음본 수:', newRecordings.length); // Debug log D
     const serializableRecordings = await Promise.all(newRecordings.map(async rec => {
       const serializableRec = {
         id: rec.id,
