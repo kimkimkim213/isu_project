@@ -79,7 +79,7 @@
         <h3>{{ currentMeeting.title }}</h3>
 
         <!-- Initial Options (Full Text / Summarize) -->
-        <div v-if="!isTextViewerVisible" class="initial-options">
+        <div v-if="!isTextViewerVisible && !showSummary" class="initial-options">
           <div class="option-box view-full" @click="showFullTextView">
             <h4>전체 대화 보기</h4>
           </div>
@@ -150,7 +150,7 @@ export default {
       default: false
     }
   },
-  emits: ['delete-recording', 'update-recording-filename', 'request-summary'], // 삭제 및 이름 수정 이벤트 추가
+  emits: ['delete-recording', 'update-recording-filename', 'request-summary', 'close-summary'], // 삭제 및 이름 수정 이벤트 추가
 
   data() {
     return {

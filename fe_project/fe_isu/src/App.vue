@@ -27,11 +27,17 @@
 
     <main class="main-content">
       <RecorderPanel v-if="activeTab === 'current'" @recording-finished="handleRecordingFinished" />
-      <PastMeetingList 
+            <PastMeetingList 
         v-else 
         :recordings="recordings" 
         @delete-recording="handleDeleteRecording"
         @update-recording-filename="handleUpdateRecordingFilename"
+        :is-summarizing="isSummarizing"
+        :summarizing-meeting-id="summarizingMeetingId"
+        :summary-text="summaryText"
+        :show-summary="showSummary"
+        @request-summary="handleRequestSummary"
+        @close-summary="handleCloseSummary"
       />
       
     </main>
@@ -175,6 +181,58 @@ function handleUpdateRecordingFilename({ id, newFilename }) {
 }
 
 
+
+// 요약 관련 상태
+const isSummarizing = ref(false);
+const summarizingMeetingId = ref(null);
+const summaryText = ref('');
+const showSummary = ref(false);
+
+// PastMeetingList로부터 요약 요청 이벤트 처리
+async function handleRequestSummary(meeting) {
+  if (!meeting || !meeting.transcription || meeting.transcription.trim() === '') {
+    console.warn('요약할 텍스트가 없습니다.');
+    // 사용자에게 알림을 줄 수 있습니다.
+    return;
+  }
+
+  isSummarizing.value = true;
+  summarizingMeetingId.value = meeting.id;
+  summaryText.value = ''; // 이전 요약 결과 초기화
+  showSummary.value = false; // 요약 결과 모달 숨김
+
+  try {
+    const response = await fetch('http://localhost:3001/api/summarize', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text: meeting.transcription }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || '요약 API 호출 실패');
+    }
+
+    const data = await response.json();
+    summaryText.value = data.summary;
+    showSummary.value = true; // 요약 결과 모달 표시
+  } catch (error) {
+    console.error('요약 중 오류:', error);
+    summaryText.value = `요약 실패: ${error.message}`;
+    showSummary.value = true; // 오류 메시지도 모달에 표시
+  } finally {
+    isSummarizing.value = false;
+    summarizingMeetingId.value = null;
+  }
+}
+
+// PastMeetingList에서 요약 모달이 닫힐 때 호출될 함수 (필요시)
+function handleCloseSummary() {
+  showSummary.value = false;
+  summaryText.value = '';
+}
 
 onMounted(() => {
   // 현재는 마운트 시 실행할 코드가 없습니다.
