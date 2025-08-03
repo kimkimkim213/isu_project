@@ -32,7 +32,7 @@ app.post('/api/summarize', async (req, res) => {
     }
 
     // 3. Vertex AI (Gemini Pro) 모델을 사용하여 요약합니다.
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
     const prompt = `주어지는 대화의 전문을 요약해 주세요. 대화: ${text}`;
 
     const result = await model.generateContent(prompt);
