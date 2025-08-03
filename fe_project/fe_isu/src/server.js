@@ -4,12 +4,12 @@ const { SpeechClient } = require('@google-cloud/speech');
 const fs = require('fs');
 const dotenv = require('dotenv');
 const cors = require('cors');
-const OpenAI = require('openai');
+const { OpenAI } = require('openai');
 
 const app = express();
 const PORT = 3001;
 
-require('dotenv').config();
+require('dotenv').config({ path: './.env' });
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
