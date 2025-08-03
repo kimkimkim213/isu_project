@@ -79,7 +79,7 @@
         <h3>{{ currentMeeting.title }}</h3>
 
         <!-- Initial Options (Full Text / Summarize) -->
-        <div v-if="!isTextViewerVisible && !showSummary" class="initial-options">
+        <div v-if="!isTextViewerVisible && !internalShowSummary" class="initial-options">
           <div class="option-box view-full" @click="showFullTextView">
             <h4>전체 대화 보기</h4>
           </div>
@@ -90,19 +90,14 @@
         </div>
 
         <!-- Summary Viewer -->
-        <div v-if="showSummary" class="summary-viewer">
+        <div v-if="internalShowSummary" class="summary-viewer">
           <div class="summary-text-area">
             <p>{{ summaryText }}</p>
-          </div>
-          <div class="modal-buttons">
-            <button class="prompt-button back" @click="$emit('close-summary')">
-              닫기
-            </button>
           </div>
         </div>
 
         <!-- Text Viewer -->
-        <div v-if="isTextViewerVisible && !showSummary" class="text-viewer">
+        <div v-if="isTextViewerVisible && !internalShowSummary" class="text-viewer">
           <div class="transcription-text-area">
             <p>{{ currentTranscriptionText }}</p>
           </div>
@@ -116,9 +111,9 @@
         <!-- Common Close/Back Button -->
         <button 
           class="prompt-button cancel"
-          @click="isTextViewerVisible ? goBackToInitialOptions() : closeTranscriptionModal()"
+          @click="isTextViewerVisible || internalShowSummary ? goBackToInitialOptions() : closeTranscriptionModal()"
         >
-          {{ isTextViewerVisible ? '뒤로 가기' : '닫기' }}
+          {{ isTextViewerVisible || internalShowSummary ? '뒤로 가기' : '닫기' }}
         </button>
       </div>
     </div>
@@ -171,9 +166,13 @@ export default {
       currentTranscriptionFilename: '', // 다운로드 시 사용할 파일명
       isTextViewerVisible: false, // 전문 보기 활성화 상태
       currentMeeting: null, // 현재 선택된 회의 정보
+      internalShowSummary: this.showSummary, // showSummary prop의 내부 복사본
     };
   },
   watch: {
+    showSummary(newVal) {
+      this.internalShowSummary = newVal;
+    },
     recordings: {
       immediate: true, // 컴포넌트 마운트 시 즉시 실행
       handler(newRecordings) {
@@ -320,6 +319,7 @@ export default {
     // 이전 화면으로 돌아가기
     goBackToInitialOptions() {
       this.isTextViewerVisible = false;
+      this.internalShowSummary = false; // 요약 화면 상태도 초기화
     },
 
     requestSummary() {
@@ -617,6 +617,30 @@ h2 {
 .option-box h4 {
     font-size: 1.8em;
     margin: 0;
+}
+
+.summary-viewer {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow: hidden;
+}
+
+.summary-text-area {
+  flex-grow: 1;
+  overflow-y: auto;
+  background-color: #f9f9f9;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px;
+  line-height: 1.6;
+  color: #333;
+}
+
+.summary-text-area p {
+  margin: 0;
+  white-space: pre-wrap;
 }
 
 .text-viewer {
