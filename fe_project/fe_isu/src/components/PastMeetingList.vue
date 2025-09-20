@@ -8,7 +8,6 @@
       class="meeting-item"
     >
       <div class="meeting-info">
-        <!-- 수정 모드일 때 입력 필드, 아닐 때 제목 표시 -->
         <input
           v-if="editingMeetingId === meeting.id"
           type="text"
@@ -17,14 +16,14 @@
           @blur="saveEditedFilename(meeting.id)"
           class="filename-edit-input"
         />
-        <!-- 제목을 클릭하면 수정 모드로 진입 -->
+        <!-- 제목 눌러서 파일명 수정 -->
         <div v-else @click="startEditingFilename(meeting)" class="editable-title-area">
           <h3>{{ meeting.title }}</h3>
           <p>{{ meeting.date }}</p>
         </div>
       </div>
 
-      <!-- 오디오 플레이어 -->
+      <!-- 재생바 -->
       <audio
         v-if="meeting.audioUrl"
         :src="meeting.audioUrl"
@@ -33,7 +32,7 @@
       ></audio>
 
       <div class="meeting-actions">
-        <!-- 오디오 다운로드 버튼 -->
+        <!-- 다운로드 -->
         <a
           v-if="meeting.audioUrl"
           :href="meeting.audioUrl"
@@ -42,14 +41,14 @@
         >
           녹음 파일 다운로드
         </a>
-        <!-- 텍스트 미리보기 버튼 -->
+        <!--미리보기 -->
         <button
           class="action-button text-preview"
           @click="previewTranscription(meeting)"
         >
           텍스트
         </button>
-        <!-- 삭제 버튼 -->
+        <!-- 삭제 -->
         <button
           class="action-button delete"
           @click="confirmDeleteMeeting(meeting.id, meeting.title)"
@@ -60,7 +59,7 @@
     </div>
     <p v-if="meetings.length === 0" class="no-meetings-message">저장된 대화가 없습니다.</p>
 
-    <!-- Custom Message Modal ( 삭제 확인, 정보 메시지 등) -->
+    <!-- 삭제 확인, 정보 메시지  -->
     <div v-if="showMessageModal" class="message-modal-overlay">
       <div class="message-modal-content">
         <h3>{{ messageModalTitle }}</h3>
@@ -73,12 +72,11 @@
       </div>
     </div>
 
-    <!-- Transcription Preview Modal -->
+    
     <div v-if="showTranscriptionModal" class="transcription-modal-overlay">
       <div class="transcription-modal-content">
         <h3>{{ currentMeeting.title }}</h3>
 
-        <!-- Initial Options (Full Text / Summarize) -->
         <div v-if="!isTextViewerVisible && !internalShowSummary" class="initial-options">
           <div class="option-box view-full" @click="showFullTextView">
             <h4>전체 대화 보기</h4>
@@ -89,14 +87,12 @@
           </div>
         </div>
 
-        <!-- Summary Viewer -->
+        
         <div v-if="internalShowSummary" class="summary-viewer">
           <div class="summary-text-area">
             <p>{{ summaryText }}</p>
           </div>
         </div>
-
-        <!-- Text Viewer -->
         <div v-if="isTextViewerVisible && !internalShowSummary" class="text-viewer">
           <div class="transcription-text-area">
             <p>{{ currentTranscriptionText }}</p>
@@ -108,7 +104,7 @@
           </div>
         </div>
 
-        <!-- Common Close/Back Button -->
+        
         <button 
           class="prompt-button cancel"
           @click="isTextViewerVisible || internalShowSummary ? goBackToInitialOptions() : closeTranscriptionModal()"
@@ -124,7 +120,7 @@
 export default {
   name: "PastMeetingList",
   props: {
-    recordings: { // App.vue에서 전달받을 recordings prop
+    recordings: {
       type: Array,
       default: () => []
     },
@@ -149,24 +145,24 @@ export default {
 
   data() {
     return {
-      meetings: [], // recordings prop을 기반으로 생성될 회의 목록
-      editingMeetingId: null, // 현재 수정 중인 회의의 ID
-      editedFilename: '', // 수정 중인 파일명
+      meetings: [],
+      editingMeetingId: null,
+      editedFilename: '',
       
-      // Custom Message Modal 상태
+      
       showMessageModal: false,
       messageModalTitle: '',
       messageModalContent: '',
-      messageModalType: '', // 'info' or 'confirmDelete'
-      pendingDeleteId: null, // 삭제 대기 중인 항목의 ID
+      messageModalType: '',
+      pendingDeleteId: null,
 
-      // Transcription Preview Modal 상태
+      
       showTranscriptionModal: false,
       currentTranscriptionText: '',
-      currentTranscriptionFilename: '', // 다운로드 시 사용할 파일명
-      isTextViewerVisible: false, // 전문 보기 활성화 상태
-      currentMeeting: null, // 현재 선택된 회의 정보
-      internalShowSummary: this.showSummary, // showSummary prop의 내부 복사본
+      currentTranscriptionFilename: '',
+      isTextViewerVisible: false,
+      currentMeeting: null,
+      internalShowSummary: this.showSummary,
     };
   },
   watch: {
@@ -174,124 +170,126 @@ export default {
       this.internalShowSummary = newVal;
     },
     recordings: {
-      immediate: true, // 컴포넌트 마운트 시 즉시 실행
+      immediate: true,
       handler(newRecordings) {
-        // 수정된 부분: 'newRecords'를 'newRecordings'로 변경
-        console.log("PastMeetingList: recordings prop 변경 감지. 새로운 녹음본:", newRecordings); // Debug log 1
+        
+        console.log("PastMeetingList: recordings prop 변경 감지. 새로운 녹음본:", newRecordings); 
 
-        // 최신순으로 정렬
+        // 순서대로 정렬
         const sortedRecordings = [...newRecordings].sort((a, b) => {
-          return new Date(b.timestamp) - new Date(a.timestamp); // 내림차순 정렬 (최신이 위로)
+          return new Date(b.timestamp) - new Date(a.timestamp); 
         });
 
         this.meetings = sortedRecordings.map((rec) => {
           const audioUrl = rec.audioBlob ? URL.createObjectURL(rec.audioBlob) : null;
           const date = new Date(rec.timestamp);
-          const meetingItem = { // 새로 생성될 meeting 객체
-            id: rec.id, // App.vue에서 전달받은 고유 ID 사용
-            title: rec.filename || `녹음본 ${date.toLocaleString()}`, // 파일명이 있으면 파일명 사용, 없으면 기존 방식 사용
+          const meetingItem = {
+            id: rec.id,
+            title: rec.filename || `녹음본 ${date.toLocaleString()}`,
             date: date.toLocaleString(),
             audioUrl: audioUrl,
-            originalTimestamp: rec.timestamp, // 파일 이름 생성을 위해 원본 타임스탬프 저장
-            audioBlob: rec.audioBlob, // 필요시 Blob 자체도 보관 (여기서는 audioUrl만 사용해도 됨)
-            transcription: rec.transcription || '텍스트 변환 결과 없음' // 텍스트 변환 결과도 추가
+
+            originalTimestamp: rec.timestamp, 
+            audioBlob: rec.audioBlob, 
+            transcription: rec.transcription || '텍스트 변환 결과 없음' // 얘진짜왜자꾸뜸
           };
-          console.log(`PastMeetingList: 매핑된 회의 항목 (ID: ${meetingItem.id}), 전사본: '${meetingItem.transcription}'`); // Debug log 2
+          console.log(`PastMeetingList: 매핑된 회의 항목 (ID: ${meetingItem.id}), 전사본: '${meetingItem.transcription}'`);
           return meetingItem;
         });
       }
     }
   },
   methods: {
-    getAudioFileName(meeting) { // 오디오 파일명 얻기 함수 (이름 변경)
-      // 다운로드 시 사용할 파일 이름 생성 (기본적으로는 title 사용, 없으면 timestamp 기반)
-      const baseName = meeting.title.replace(/[\\/:*?"<>|]/g, '_'); // 파일명으로 사용할 수 없는 문자 제거
-      return `${baseName}.webm`; // webm 확장자 사용
+    getAudioFileName(meeting) {//다운로드할 파일명 지정
+      
+      const baseName = meeting.title.replace(/[\\/:*?"<>|]/g, '_');
+      return `${baseName}.webm`;
     },
     
-    // 녹음본 삭제 확인 모달 표시
-    confirmDeleteMeeting(id, title) {
+    
+    confirmDeleteMeeting(id, title) { // 삭제확인창 출력
         this.pendingDeleteId = id;
         this.displayMessageModal('녹음본 삭제', `'${title}' 녹음본을 삭제하시겠습니까?`, 'confirmDelete');
     },
 
-    // 실제 녹음본 삭제 로직
-    executeDeleteMeeting() {
+    
+    executeDeleteMeeting() { //삭제확인창에서 삭제버튼 클릭시
         if (this.pendingDeleteId) {
-            this.$emit('delete-recording', this.pendingDeleteId);
+            this.$emit('delete-recording', this.pendingDeleteId);//녹음본 삭제
             this.closeMessageModal();
             this.displayMessageModal('삭제 완료', '녹음본이 삭제되었습니다.');
         }
     },
 
-    // 파일명 수정 모드 시작
-    startEditingFilename(meeting) {
-      // 이미 수정 모드라면 다시 시작하지 않음
+    
+    startEditingFilename(meeting) { //파일명 수정 - 시작
+     
       if (this.editingMeetingId === meeting.id) {
         return;
       }
+      //수정할 녹음파일 타게팅
       this.editingMeetingId = meeting.id;
-      this.editedFilename = meeting.title; // 현재 제목을 편집 필드에 로드
+      this.editedFilename = meeting.title;
       this.$nextTick(() => {
-        // 입력 필드에 포커스
+        
         const input = this.$el.querySelector('.filename-edit-input');
         if (input) {
           input.focus();
-          input.select(); // 텍스트 전체 선택
+          input.select();
         }
       });
     },
 
-    // 파일명 수정 저장
-    saveEditedFilename(id) {
-      // 수정 중인 항목이 아니라면 저장하지 않음 (blur 이벤트 중복 방지 등)
+    
+    saveEditedFilename(id) { //파일명 수정 - 저장
+      
       if (this.editingMeetingId !== id) {
         return;
       }
-
       const originalMeeting = this.meetings.find(m => m.id === id);
       const originalFilename = originalMeeting ? originalMeeting.title : '';
+
       const newFilenameTrimmed = this.editedFilename.trim();
 
       if (newFilenameTrimmed === '') {
         this.displayMessageModal('이름 변경 실패', '파일 이름은 비워둘 수 없습니다.');
-        // 기존 이름으로 되돌리기
+    
         this.editedFilename = originalFilename;
-        this.editingMeetingId = null; // 수정 모드 종료
+        this.editingMeetingId = null;
         return;
-      }
+      }//빈 이름 감지시 뒤로가기
       
-      // 파일 이름이 변경되지 않았거나 기존과 같은 경우에는 알림 팝업을 띄우지 않고 취소
+      
       if (newFilenameTrimmed === originalFilename) {
-        this.editingMeetingId = null; // 수정 모드 종료
+        this.editingMeetingId = null;
         return; 
-      }
+      } // 변경사항 없으면 팝업창 닫기
 
       this.$emit('update-recording-filename', { id: id, newFilename: newFilenameTrimmed });
-      this.editingMeetingId = null; // 수정 모드 종료
-      this.displayMessageModal('이름 변경 완료', `녹음본 이름이 '${newFilenameTrimmed}'(으)로 변경되었습니다.`);
+      this.editingMeetingId = null;
+      this.displayMessageModal('이름 변경 완료', `녹음본 이름이 '${newFilenameTrimmed}'(으)로 변경되었습니다.`);//이름변경 성공
     },
 
-    // 텍스트 미리보기 버튼 클릭 시
-    previewTranscription(meeting) {
+   
+    previewTranscription(meeting) { //텍스트화된 녹음본 - 미리보기
       if (!meeting.transcription || meeting.transcription === '텍스트 변환 결과 없음' || meeting.transcription.trim() === '') {
-        this.displayMessageModal('텍스트 없음', '이 녹음본에 대한 변환된 텍스트가 없습니다.');
+        this.displayMessageModal('텍스트 없음', '이 녹음본에 대한 변환된 텍스트가 없습니다.');//겁나많이뜨던오류
         return;
       }
       this.currentMeeting = meeting;
       this.currentTranscriptionText = meeting.transcription;
       this.currentTranscriptionFilename = `${meeting.title.replace(/[\\/:*?"<>|]/g, '_')}.txt`; 
-      this.isTextViewerVisible = false; // 항상 초기 화면으로 시작
+      this.isTextViewerVisible = false; 
       this.showTranscriptionModal = true;
     },
 
-    // 전문 보기 화면으로 전환
-    showFullTextView() {
+   
+    showFullTextView() { //전체화면
       this.isTextViewerVisible = true;
     },
 
-    // 미리보기 모달에서 파일 다운로드 버튼 클릭 시
-    downloadTranscriptionAsFile() {
+    
+    downloadTranscriptionAsFile() { //텍스트화된 녹음본 - 파일로 다운로드
       if (!this.currentTranscriptionText) {
         this.displayMessageModal('다운로드 오류', '다운로드할 텍스트 내용이 없습니다.');
         return;
@@ -301,32 +299,32 @@ export default {
       
       const link = document.createElement('a');
       link.href = URL.createObjectURL(textBlob);
-      link.download = this.currentTranscriptionFilename; // 미리 저장해둔 파일명 사용
+      link.download = this.currentTranscriptionFilename;
       link.click();
-      URL.revokeObjectURL(link.href); // URL 해제
+      URL.revokeObjectURL(link.href);
       
       this.displayMessageModal('다운로드 완료', `'${this.currentTranscriptionFilename}' 텍스트 파일이 다운로드되었습니다.`);
     },
 
-    // 미리보기 모달 닫기
-    closeTranscriptionModal() {
+    
+    closeTranscriptionModal() { // 텍스트화된 녹음본 - 미리보기 닫기,초기화
       this.showTranscriptionModal = false;
       this.currentTranscriptionText = '';
       this.currentTranscriptionFilename = '';
-      this.isTextViewerVisible = false; // 상태 리셋
+      this.isTextViewerVisible = false;
     },
 
     // 이전 화면으로 돌아가기
     goBackToInitialOptions() {
       this.isTextViewerVisible = false;
-      this.internalShowSummary = false; // 요약 화면 상태도 초기화
+      this.internalShowSummary = false;
     },
-
+    // 요약 요청
     requestSummary() {
       this.$emit('request-summary', this.currentMeeting);
     },
 
-    // Custom Message Modal (for errors/information) - replacing alert()
+    // 메시지 표시
     displayMessageModal(title, content, type = 'info') {
       this.messageModalTitle = title;
       this.messageModalContent = content;
@@ -342,7 +340,7 @@ export default {
       this.pendingDeleteId = null;
     }
   },
-  // 컴포넌트가 언마운트될 때 생성된 Blob URL 해제
+  
   beforeUnmount() {
     this.meetings.forEach(meeting => {
       if (meeting.audioUrl) {
@@ -384,15 +382,15 @@ h2 {
     flex-direction: column;
     gap: 5px;
 }
-/* 클릭 가능한 제목 영역 스타일 */
+/* 제목수정용으로추가함*/
 .editable-title-area {
     cursor: pointer;
-    padding: 5px; /* 클릭 영역을 좀 더 넓게 */
+    padding: 5px; 
     border-radius: 4px;
     transition: background-color 0.2s ease;
 }
 .editable-title-area:hover {
-    background-color: #f0f0f0; /* 호버 효과 */
+    background-color: #f0f0f0;
 }
 
 .meeting-info h3 {
@@ -406,7 +404,7 @@ h2 {
   font-size: 0.9em;
 }
 .filename-edit-input {
-    width: calc(100% - 20px); /* Adjust width to fit */
+    width: calc(100% - 20px);
     padding: 8px 10px;
     border: 1px solid #007bff;
     border-radius: 4px;
@@ -416,15 +414,15 @@ h2 {
 .audio-player {
   width: 100%;
   margin-top: 10px;
-  accent-color: red; /* 재생바 색상을 빨간색으로 변경 */
+  accent-color: red;
 }
 .meeting-actions {
     display: flex;
-    gap: 10px; /* 버튼 간 간격 */
+    gap: 10px; 
     margin-top: 10px;
 }
 .action-button {
-  background-color: #007bff; /* 기본 버튼 색상 */
+  background-color: #007bff; 
   color: white;
   padding: 8px 16px;
   text-decoration: none;
@@ -441,8 +439,8 @@ h2 {
 .action-button.download:hover {
   background-color: #218838;
 }
-.action-button.text-preview { /* 텍스트 미리보기 버튼 스타일 추가 */
-  background-color: #007bff; /* 파란색 계열 */
+.action-button.text-preview {
+  background-color: #007bff;
 }
 .action-button.text-preview:hover {
   background-color: #0056b3;
@@ -460,7 +458,6 @@ h2 {
   padding: 50px 0;
 }
 
-/* Custom Message Modal Styles */
 .message-modal-overlay {
   position: fixed;
   top: 0;
@@ -538,7 +535,7 @@ h2 {
     background-color: #5a6268;
 }
 
-/* Transcription Preview Modal Styles */
+/*텍스트미리보기*/
 .transcription-modal-overlay {
   position: fixed;
   top: 0;
@@ -703,15 +700,15 @@ h2 {
 .transcription-modal-content > .prompt-button.cancel {
   background-color: #6c757d;
   flex-shrink: 0;
-  margin-top: auto; /* Push to the bottom */
+  margin-top: auto;
 }
 .prompt-button.cancel:hover {
   background-color: #5a6268;
 }
 
 .loader {
-  border: 4px solid #f3f3f3; /* Light grey */
-  border-top: 4px solid #3498db; /* Blue */
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #3498db;
   border-radius: 50%;
   width: 40px;
   height: 40px;

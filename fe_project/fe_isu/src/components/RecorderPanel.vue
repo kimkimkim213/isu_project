@@ -55,7 +55,7 @@
       </div>
     </div>
 
-    <!-- Transcription Loading Modal -->
+    
     <div v-if="isTranscribing" class="transcribing-modal-overlay">
       <div class="transcribing-modal-content">
         <div class="spinner"></div>
@@ -70,7 +70,6 @@
 import { ref } from "vue";
 import { onMounted } from 'vue';
 
-// ...existing code...
 
 // Helper function to generate a unique ID
 function generateUniqueId() {

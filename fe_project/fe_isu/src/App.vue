@@ -19,7 +19,6 @@
             지난 회의
           </button>
         </nav>
-        <!-- 테마 전환 버튼은 제거되었습니다. -->
       </div>
     </header>
     
@@ -52,20 +51,21 @@ import PastMeetingList from '@/components/PastMeetingList.vue'
 
 
 
-// Blob 데이터를 Base64 문자열로 인코딩/디코딩하는 헬퍼 함수
+// Blob 데이터 >> Base64 문자열 변환
 function blobToBase64(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => resolve(reader.result);
     reader.onerror = reject;
-    reader.readAsDataURL(blob); // Base64 Data URL로 읽기
+    reader.readAsDataURL(blob);
+    console.log('blobToBase64: blob >> base64변환:', blob);
   });
 }
-
+// Base64 문자열 >> Blob 데이터 변환
 function base64ToBlob(base64, mimeType) {
   if (!base64 || typeof base64 !== 'string') {
     console.error('Invalid base64 string provided to base64ToBlob:', base64);
-    return null; // 유효하지 않은 경우 null 반환
+    return null;
   }
   const parts = base64.split(';base64,');
   if (parts.length < 2) {
@@ -82,62 +82,61 @@ function base64ToBlob(base64, mimeType) {
     }
     return new Blob([uInt8Array], { type: contentType });
   } catch (e) {
-    console.error('Error decoding base64 to blob:', e, base64);
+    console.error('디코딩중 오류 base64 >> blob:', e, base64);
     return null;
   }
 }
 
-// Helper function to generate a unique ID
+//아이디 렌덤 생성
 function generateUniqueId() {
-  // Use a combination of timestamp and random number for a high probability of uniqueness
   return Date.now().toString(36) + Math.random().toString(36).substring(2);
 }
 
 const activeTab = ref('current')
 
-// recordings를 localStorage에서 로드하거나 빈 배열로 초기화
+// 녹음본 로드
 const recordings = ref([]);
 const storedRecordings = JSON.parse(localStorage.getItem('meetingRecordings') || '[]');
 
-// 로드 시 Base64 문자열을 Blob 객체로 변환
+// 로드 후 Base64 >> Blob 변환
 storedRecordings.forEach(item => {
   if (item.audioBase64 && item.audioType) {
     const blob = base64ToBlob(item.audioBase64, item.audioType);
-    if (blob) { // Blob 변환이 성공했을 때만 추가
+    if (blob) {
       recordings.value.push({
-        id: item.id || generateUniqueId(), // 기존 데이터에 ID가 없으면 새로 생성
+        id: item.id || generateUniqueId(), 
         timestamp: item.timestamp,
-        audioBlob: blob, // 여기에 audioBlob이 제대로 들어가는 것이 중요
-        filename: item.filename // 파일 이름도 로드
+        audioBlob: blob, 
+        filename: item.filename 
       });
     } else {
-      console.warn('Failed to convert base64 to blob for item:', item);
+      console.warn('base64 to blob-실패:', item);
     }
   }
 });
 
 
-// recordings가 변경될 때마다 localStorage에 저장
+// recordings가 변경시마다 로컬에 저장
 watch(recordings, async (newRecordings) => {
   const serializableRecordings = await Promise.all(newRecordings.map(async rec => {
-    // rec.audioBlob이 실제로 Blob 객체인지 확인
-    if (rec.audioBlob instanceof Blob) {
+
+    if (rec.audioBlob instanceof Blob) {// blob인지 확인
       const audioBase64 = await blobToBase64(rec.audioBlob);
       return {
-        id: rec.id, // ID 저장
+        id: rec.id,
         timestamp: rec.timestamp,
         audioBase64: audioBase64,
         audioType: rec.audioBlob.type,
-        filename: rec.filename // 파일 이름 저장
+        filename: rec.filename
       };
     } else {
       console.warn('Skipping non-Blob audioBlob during serialization:', rec.audioBlob);
       return {
-          id: rec.id, // ID 유지
+          id: rec.id,
           timestamp: rec.timestamp,
           audioBase64: null,
           audioType: null,
-          filename: rec.filename // 파일 이름은 null이 아니어도 유지
+          filename: rec.filename 
       };
     }
   }));
@@ -145,32 +144,30 @@ watch(recordings, async (newRecordings) => {
 }, { deep: true });
 
 
-// RecorderPanel로부터 `data` 객체를 받음
+// Recorderpanel data 받아오기
 function handleRecordingFinished(data) {
   const { audioBlob, filename, transcription } = data; 
   const timestamp = new Date().toISOString();
 
-  console.log('handleRecordingFinished: Received audioBlob:', audioBlob);
-  console.log('handleRecordingFinished: Is it a Blob?', audioBlob instanceof Blob);
-  console.log('handleRecordingFinished: Received filename:', filename);
-  console.log('handleRecordingFinished: Received transcription:', transcription);
+  console.log('handleRecordingFinished: 받은 blob,blob여부,파일명:', audioBlob, audioBlob instanceof Blob, filename);
+  console.log('handleRecordingFinished: 받은 전사본:', transcription);
 
 
-  recordings.value.push({
-    id: generateUniqueId(), // 새 녹음본에 고유 ID 생성
+  recordings.value.push({ //새 녹음본 추가
+    id: generateUniqueId(),
     audioBlob: audioBlob, 
     timestamp: timestamp,
     filename: filename || `회의록_${new Date(timestamp).toLocaleString().replace(/[:.]/g, '-')}`,
-    transcription: transcription // transcription 추가
+    transcription: transcription // 오류의원인이었던것
   });
 }
 
-// PastMeetingList로부터 녹음본 삭제 이벤트 처리
-function handleDeleteRecording(idToDelete) {
-  recordings.value = recordings.value.filter(rec => rec.id !== idToDelete);
+// 지난회의목록 녹음본 삭제 처리
+function handleDeleteRecording(idtodelete) {
+  recordings.value = recordings.value.filter(rec => rec.id !== idtodelete);
 }
 
-// PastMeetingList로부터 녹음본 파일명 업데이트 이벤트 처리
+// 지난회의목록 이름 변경 처리
 function handleUpdateRecordingFilename({ id, newFilename }) {
   recordings.value = recordings.value.map(rec => {
     if (rec.id === id) {
@@ -182,26 +179,25 @@ function handleUpdateRecordingFilename({ id, newFilename }) {
 
 
 
-// 요약 관련 상태
+// 녹음본 상태변수들
 const isSummarizing = ref(false);
 const summarizingMeetingId = ref(null);
 const summaryText = ref('');
 const showSummary = ref(false);
 
-// PastMeetingList로부터 요약 요청 이벤트 처리
+// 지난회의 요약 요청
 async function handleRequestSummary(meeting) {
   if (!meeting || !meeting.transcription || meeting.transcription.trim() === '') {
-    console.warn('요약할 텍스트가 없습니다.');
-    // 사용자에게 알림을 줄 수 있습니다.
+    console.warn('요약할 텍스트가 없습니다.');//자주뜨던 오류-입력 없음
     return;
   }
-
+  // 요약 상태 초기화
   isSummarizing.value = true;
   summarizingMeetingId.value = meeting.id;
-  summaryText.value = ''; // 이전 요약 결과 초기화
-  showSummary.value = false; // 요약 결과 모달 숨김
+  summaryText.value = '';
+  showSummary.value = false;
 
-  try {
+  try { //API 호출
     const response = await fetch('http://localhost:3001/api/summarize', {
       method: 'POST',
       headers: {
@@ -210,51 +206,43 @@ async function handleRequestSummary(meeting) {
       body: JSON.stringify({ text: meeting.transcription }),
     });
 
-    if (!response.ok) {
+    if (!response.ok) { //API 호출실패시 에러처리
       const errorData = await response.json();
       throw new Error(errorData.error || '요약 API 호출 실패');
     }
-
-    const data = await response.json();
+    //API 호출성공시 저장
+    const data = await response.json();//
     summaryText.value = data.summary;
-    showSummary.value = true; // 요약 결과 모달 표시
+    showSummary.value = true;
+    console.log('요약 완료:', data.summary);
+
   } catch (error) {
     console.error('요약 중 오류:', error);
     summaryText.value = `요약 실패: ${error.message}`;
-    showSummary.value = true; // 오류 메시지도 모달에 표시
-  } finally {
+    showSummary.value = true; // 요약중 오류 표시
+  } finally { //요약상태 초기화
     isSummarizing.value = false;
     summarizingMeetingId.value = null;
   }
 }
 
-// PastMeetingList에서 요약 모달이 닫힐 때 호출될 함수 (필요시)
+// 요약화면 닫히면 데이터 초기화
 function handleCloseSummary() {
   showSummary.value = false;
   summaryText.value = '';
 }
-
-onMounted(() => {
-  // 현재는 마운트 시 실행할 코드가 없습니다.
-});
-
-onUnmounted(() => {
-  // 현재는 언마운트 시 실행할 코드가 없습니다.
-});
 </script>
 
 <style>
-/* 전역 스타일 */
+/*전역 스타일*/
 body {
   font-family: 'PyeojinGothic-Bold', sans-serif;
-  font-size: 16px; /* 기본 폰트 크기 */
-  line-height: 1.6; /* 줄 간격 */
-  color: #333; /* 기본 텍스트 색상 */
-  background-color: #fff; /* 기본 배경 색상 (화이트 모드) */
-  /* 테마 전환 애니메이션은 제거되었습니다. */
+  font-size: 16px;
+  line-height: 1.6;
+  color: #333;
+  background-color: #fff;
 }
 
-/* 다크 모드 전역 스타일은 제거되었습니다. */
 </style>
 
 <style scoped>
@@ -263,30 +251,29 @@ body {
   flex-direction: column;
   height: 100vh;
   margin: 0;
-  /* 테마에 따른 배경 및 텍스트 색상 전환 관련 스타일은 제거되었습니다. */
-  background-color: #fff; /* 기본 배경색으로 설정 */
-  color: #333; /* 기본 텍스트색으로 설정 */
+  background-color: #fff;
+  color: #333;
 }
 
-/* 다크 모드/라이트 모드 변수 정의는 제거되었습니다. */
+
 
 
 .header-bar {
-  position: fixed; /* 헤더 고정 */
+  position: fixed;
   top: 0;
   left: 0;
-  width: 100%; /* 너비를 100%로 설정 */
-  z-index: 1000; /* 다른 콘텐츠 위에 표시되도록 z-index 설정 */
+  width: 100%;
+  z-index: 1000;
   display: flex;
   justify-content: center;
   align-items: center;
-  /* 헤더 그라데이션은 제거되었고, 단색 배경으로 롤백합니다. */
+
   background-color: #000; 
-  color: #fff; /* 헤더 텍스트는 항상 흰색 유지 */
+  color: #fff;
   height: 100px;
   box-sizing: border-box;
   flex-shrink: 0;
-  overflow: hidden; /* 로고가 밖으로 나갈 때 스크롤바 생기지 않도록 */
+  overflow: hidden;
 }
 
 .header-content-wrapper {
@@ -294,14 +281,14 @@ body {
   align-items: center;
   justify-content: flex-start;
   width: 100%;
-  max-width: 1200px; /* 고정할 최대 너비 */
+  max-width: 1200px;
   box-sizing: border-box;
   position: relative;
 }
 
 .logo-placeholder {
   flex-shrink: 0;
-  margin-left: -24px; /* 로고를 왼쪽으로 24px 이동시켜 끝단에 붙임 (원래 패딩만큼) */
+  margin-left: -24px;
 }
 
 .logo-img {
@@ -324,7 +311,7 @@ body {
   font-family: 'PyeojinGothic-Bold', sans-serif;
   background: none;
   border: none;
-  color: #888; /* 기존 색상으로 롤백 */
+  color: #888;
   font-size: 36px;
   padding: 0 24px;
   cursor: pointer;
@@ -339,26 +326,25 @@ body {
 .api_box {
   height: auto;
   position: fixed;
-  top: 100px; /* 헤더 아래에 위치하도록 조정 */
+  top: 100px;
   right: 0;
   padding: 10px;
-  background-color: #f0f0f0; /* 배경색 */
-  border: 1px solid #ccc; /* 테두리 */
-  z-index: 1001; /* 헤더보다 위에 표시되도록 */
+  background-color: #f0f0f0;
+  border: 1px solid #ccc;
+  z-index: 1001;
 }
 
 .tab-button.active {
   color: #fff;
 }
 
-/* 테마 전환 버튼 스타일은 제거되었습니다. */
+
 
 .main-content {
   flex: 1;
-  background-color: #fff; /* main-content 배경색도 기본 화이트로 롤백 */
+  background-color: #fff; 
   position: relative;
-  padding-top: 100px; /* 고정된 헤더의 높이만큼 여백 추가 */
+  padding-top: 100px;
 }
 
-/* PastMeetingList 내부 스타일 오버라이드는 제거되었습니다. */
 </style>
