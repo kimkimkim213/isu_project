@@ -197,7 +197,7 @@ async function handleRequestSummary(meeting) {
   summaryText.value = '';
   showSummary.value = false;
 
-  try { //API 호출
+  try { //API 호출 - 요약
     const response = await fetch('http://localhost:3001/api/summarize', {
       method: 'POST',
       headers: {

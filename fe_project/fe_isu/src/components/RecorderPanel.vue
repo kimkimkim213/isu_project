@@ -197,7 +197,7 @@ async function toggleRecording() {
       };
 
       mediaRecorder.value.onstop = () => {
-        // 모든 트랙 중지 (마이크 아이콘 끄기)
+        // 트랙 중지
         if (currentStream) {
           currentStream.getTracks().forEach((track) => track.stop());
           currentStream = null;
@@ -207,8 +207,7 @@ async function toggleRecording() {
         const finalBlob = new Blob(audioChunks.value, { type: supportedMimeType }); // 최종 Blob 타입도 supportedMimeType 사용
         console.log('Final Audio Blob size on stop:', finalBlob.size, 'bytes');
 
-        // 이 부분이 핵심 변경: onstop이 완료된 후에만 파일명 프롬프트/저장 로직이 진행되도록 여기서 처리
-        if (showOptions.value) { // "저장하고 종료하기" 옵션을 선택한 경우
+        if (showOptions.value) { // 저장하고 종료하기
           if (audioChunks.value.length === 0) {
               console.error("ERROR: No audio chunks were collected after stop! 녹음된 데이터가 없습니다.");
               displayMessageModal("녹음 오류", "녹음된 데이터가 없습니다. 마이크가 제대로 작동하는지 확인해주세요.");
@@ -225,16 +224,18 @@ async function toggleRecording() {
               minute: "2-digit",
               second: "2-digit",
               hour12: false,
+
             })
             .replace(/(\.\s*|\s*:\s*|\s*)/g, "-")
             .replace(/\.$/, "")}`;
           showFilenamePrompt.value = true;
           showOptions.value = false; // 옵션 팝업 숨김
-        } else { 
-            // "저장하지 않고 종료하기" 옵션을 선택했거나 다른 방식으로 녹음이 중지된 경우
-            // 이 경우는 discardAndStopRecording()에서 이미 처리가 되므로,
-            // 추가적인 동작 없이 resetRecordingState()만 호출되도록 합니다.
-            // discardAndStopRecording()이 이미 resetRecordingState()를 호출하므로 중복 방지.
+        } else {
+          // 저장하지 않고 종료하기
+          audioChunks.value = []; // 데이터 버림
+          console.log("녹음본 저장하지 않고 종료");
+          displayMessageModal("녹음 삭제", "녹음본이 저장되지 않고 삭제되었습니다.");
+          resetRecordingState();
         }
       };
 
@@ -245,12 +246,12 @@ async function toggleRecording() {
       console.error("마이크 접근 오류:", error);
       displayMessageModal(
         "마이크 접근 오류",
-        "마이크 접근 권한이 필요합니다. 브라우저 설정에서 마이크 접근을 허용해주세요."
+        "마이크 접근 권한 필요"
       );
       resetRecordingState(); // 오류 시 상태 초기화
     }
   } else {
-    // 녹음 중일 때 버튼을 누르면 팝업 표시 (저장/취소 옵션)
+    // 녹음 중일 때 버튼을 누르면 저장/취소 선택 가능
     showOptions.value = true;
     console.log("녹음 중지 옵션 표시");
   }
@@ -420,15 +421,18 @@ function stopVolumeMeter() {
   volume.value = 0;
 }
 
-// ===== Google Speech-to-Text API 호출 (백엔드 프록시를 통해) =====
+// STT API 호출
 async function sendToSpeechAPI(audioBlob) {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
+    const reader = new FileReader(); // Blob을 Base64로 변환
+    console.log('sendToSpeechAPI - Blob size:', audioBlob && audioBlob.size);
+    
     reader.onload = async () => {
       const base64DataUrl = reader.result;
       const base64Audio = base64DataUrl.split(',')[1];
-
+      console.log('base64 길이:', base64Audio ? base64Audio.length : 0);
+      console.log('전송 정보 - sampleRate:', currentSampleRate.value, 'mimeType:', currentMimeType.value);
+      
       try {
         const res = await fetch('http://localhost:3001/api/transcribe', {
           method: 'POST',
@@ -452,12 +456,12 @@ async function sendToSpeechAPI(audioBlob) {
           resolve(data.transcription);
         } else {
           console.warn('STT API response missing transcription:', data);
-          // 빈 텍스트를 반환할 경우 '변환된 텍스트가 없습니다.' 메시지로 처리
+          // 빈 텍스트를 반환할 경우
           resolve('변환된 텍스트가 없습니다.'); 
         }
       } catch (error) {
         console.error('sendToSpeechAPI 호출 실패:', error);
-        // 네트워크 또는 서버 오류일 경우 상세 메시지 포함
+        // 네트워크 또는 서버 오류일 경우
         reject(error);
       }
     };
