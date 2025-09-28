@@ -52,7 +52,47 @@ export function useAudioMeter() {
 
 // --- ManageRecord ---
 import { watch, onMounted } from 'vue';
-import { putBlob, getBlob, deleteBlob } from './idbAudioStore.js';
+
+// --- idbAudioStore (inline) ---
+import { openDB } from 'idb';
+
+const DB_NAME = 'isu_audio_store_v1';
+const STORE_NAME = 'audio_blobs';
+const DB_VERSION = 1;
+
+let dbPromise = null;
+function getDb() {
+	if (!dbPromise) {
+		dbPromise = openDB(DB_NAME, DB_VERSION, {
+			upgrade(db) {
+				if (!db.objectStoreNames.contains(STORE_NAME)) {
+					db.createObjectStore(STORE_NAME);
+				}
+			}
+		});
+	}
+	return dbPromise;
+}
+
+export async function putBlob(key, blob) {
+	const db = await getDb();
+	return db.put(STORE_NAME, blob, key);
+}
+
+export async function getBlob(key) {
+	const db = await getDb();
+	return db.get(STORE_NAME, key);
+}
+
+export async function deleteBlob(key) {
+	const db = await getDb();
+	return db.delete(STORE_NAME, key);
+}
+
+export async function clearAll() {
+	const db = await getDb();
+	return db.clear(STORE_NAME);
+}
 
 // 로컬메타데이터(localStorage) + IndexedDB(idbAudioStore)를 묶어
 // 녹음 목록을 관리하는 composable을 제공합니다.
@@ -163,5 +203,4 @@ export function useRecordings() {
 	return { recordings, addRecording, deleteRecording, updateRecordingFilename };
 }
 
-// Re-export idb helpers
-export { putBlob, getBlob, deleteBlob, clearAll } from './idbAudioStore.js';
+// idb helpers are inlined above to reduce file count

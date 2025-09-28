@@ -59,15 +59,17 @@
     </div>
     <p v-if="meetings.length === 0" class="no-meetings-message">저장된 대화가 없습니다.</p>
 
-    <!-- 삭제 확인, 정보 메시지: MessageModal 사용 -->
-    <MessageModal
-      :show="showMessageModal"
-      :title="messageModalTitle"
-      :content="messageModalContent"
-      :type="messageModalType === 'confirmDelete' ? 'confirm' : 'info'"
-      @confirm="executeDeleteMeeting"
-      @close="closeMessageModal"
-    />
+    <!-- 삭제 확인, 정보 메시지: 인라인 MessageModal -->
+    <div v-if="showMessageModal" class="message-modal-overlay">
+      <div class="message-modal-content">
+        <h3>{{ messageModalTitle }}</h3>
+        <p>{{ messageModalContent }}</p>
+        <div class="modal-buttons">
+          <button v-if="messageModalType === 'confirmDelete'" @click="executeDeleteMeeting" class="confirm">확인</button>
+          <button @click="closeMessageModal" class="close">{{ messageModalType === 'confirmDelete' ? '취소' : '확인' }}</button>
+        </div>
+      </div>
+    </div>
 
     
     <div v-if="showTranscriptionModal" class="transcription-modal-overlay">
@@ -114,12 +116,10 @@
 </template>
 
 <script>
-import { getObjectUrl, revokeObjectUrl } from '@/utils';
-import MessageModal from '@/components/MessageModal.vue';
 
 export default {
   name: "PastMeetingList",
-  components: { MessageModal },
+  components: {},
   props: {
     recordings: {
       type: Array,
@@ -184,7 +184,7 @@ export default {
         const newIds = new Set(sortedRecordings.map(r => r.id));
         Object.keys(this.audioUrlMap).forEach(k => {
           if (!newIds.has(k)) {
-            try { revokeObjectUrl(k); } catch (e) { /* ignore */ }
+            try { this.revokeObjectUrlLocal(k); } catch (e) { /* ignore */ }
             delete this.audioUrlMap[k];
           }
         });
@@ -205,12 +205,31 @@ export default {
     }
   },
   methods: {
+    // object URL 캐시(인라인): id 기반으로 URL 생성/재사용
+    getObjectUrlLocal(id, blob) {
+      if (!id || !blob) return null;
+      if (this.audioUrlMap[id]) return this.audioUrlMap[id];
+      try {
+        const url = URL.createObjectURL(blob);
+        this.audioUrlMap[id] = url;
+        return url;
+      } catch (e) {
+        console.warn('getObjectUrl failed', id, e);
+        return null;
+      }
+    },
+
+    revokeObjectUrlLocal(id) {
+      const url = this.audioUrlMap[id];
+      if (url) {
+        try { URL.revokeObjectURL(url); } catch (err) { /* ignore */ }
+        delete this.audioUrlMap[id];
+      }
+    },
+
     getAudioUrl(meeting) {
       if (!meeting || !meeting.audioBlob) return null;
-      if (this.audioUrlMap[meeting.id]) return this.audioUrlMap[meeting.id];
-      const url = getObjectUrl(meeting.id, meeting.audioBlob);
-      if (url) this.audioUrlMap[meeting.id] = url;
-      return url;
+      return this.getObjectUrlLocal(meeting.id, meeting.audioBlob);
     },
     getAudioFileName(meeting) {//다운로드할 파일명 지정
       
@@ -355,7 +374,7 @@ export default {
   },
   
   beforeUnmount() {
-    this.meetings.forEach(meeting => revokeObjectUrl(meeting.id));
+    this.meetings.forEach(meeting => this.revokeObjectUrlLocal(meeting.id));
   }
 };
 </script>
