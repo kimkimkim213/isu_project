@@ -4,7 +4,7 @@
     <past-meeting-list 
       :recordings="recordings" 
       @delete-recording="deleteRecording"
-      @update-filename="updateRecordingFilename">
+      @update-recording-filename="updateRecordingFilename">
     </past-meeting-list>
   </div>
 </template>
@@ -12,9 +12,8 @@
 <script>
 import RecorderPanel from './RecorderPanel.vue';
 import PastMeetingList from './PastMeetingList.vue';
-import { useRecordings } from '../conposable/ManageRecord.js';
-import { ref, onMounted } from 'vue';
-import axios from 'axios';
+import { useRecordings } from '@/conposable';
+import { ref } from 'vue';
 
 export default {
   name: 'ManageRecording',

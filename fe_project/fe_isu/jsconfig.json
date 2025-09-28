@@ -1,5 +1,8 @@
+
 {
+  "$schema": "https://json.schemastore.org/jsconfig",
   "compilerOptions": {
+    "types": [],
     "target": "es5",
     "module": "esnext",
     "baseUrl": ".",
@@ -17,5 +20,9 @@
     ]
     
   }
-  
+  ,
+  "typeAcquisition": {
+    "enable": false
+  }
+
 }

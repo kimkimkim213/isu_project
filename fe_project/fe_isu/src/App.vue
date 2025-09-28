@@ -45,136 +45,35 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref } from 'vue'
 import RecorderPanel from '@/components/RecorderPanel.vue'
 import PastMeetingList from '@/components/PastMeetingList.vue'
+import { useRecordings } from '@/conposable';
 
-
-
-// Blob 데이터 >> Base64 문자열 변환
-function blobToBase64(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-    console.log('blobToBase64: blob >> base64변환:', blob);
-  });
-}
-// Base64 문자열 >> Blob 데이터 변환
-function base64ToBlob(base64, mimeType) {
-  if (!base64 || typeof base64 !== 'string') {
-    console.error('Invalid base64 string provided to base64ToBlob:', base64);
-    return null;
-  }
-  const parts = base64.split(';base64,');
-  if (parts.length < 2) {
-      console.error('Base64 string format is incorrect:', base64);
-      return null;
-  }
-  const contentType = parts[0].split(':')[1] || mimeType;
-  try {
-    const raw = window.atob(parts[1]);
-    const rawLength = raw.length;
-    const uInt8Array = new Uint8Array(rawLength);
-    for (let i = 0; i < rawLength; ++i) {
-      uInt8Array[i] = raw.charCodeAt(i);
-    }
-    return new Blob([uInt8Array], { type: contentType });
-  } catch (e) {
-    console.error('디코딩중 오류 base64 >> blob:', e, base64);
-    return null;
-  }
-}
-
-//아이디 렌덤 생성
-function generateUniqueId() {
-  return Date.now().toString(36) + Math.random().toString(36).substring(2);
-}
+// use centralized recordings composable
+const { recordings, addRecording, deleteRecording, updateRecordingFilename } = useRecordings();
 
 const activeTab = ref('current')
 
-// 녹음본 로드
-const recordings = ref([]);
-const storedRecordings = JSON.parse(localStorage.getItem('meetingRecordings') || '[]');
-
-// 로드 후 Base64 >> Blob 변환
-storedRecordings.forEach(item => {
-  if (item.audioBase64 && item.audioType) {
-    const blob = base64ToBlob(item.audioBase64, item.audioType);
-    if (blob) {
-      recordings.value.push({
-        id: item.id || generateUniqueId(), 
-        timestamp: item.timestamp,
-        audioBlob: blob, 
-        filename: item.filename 
-      });
-    } else {
-      console.warn('base64 to blob-실패:', item);
-    }
-  }
-});
-
-
-// recordings가 변경시마다 로컬에 저장
-watch(recordings, async (newRecordings) => {
-  const serializableRecordings = await Promise.all(newRecordings.map(async rec => {
-
-    if (rec.audioBlob instanceof Blob) {// blob인지 확인
-      const audioBase64 = await blobToBase64(rec.audioBlob);
-      return {
-        id: rec.id,
-        timestamp: rec.timestamp,
-        audioBase64: audioBase64,
-        audioType: rec.audioBlob.type,
-        filename: rec.filename
-      };
-    } else {
-      console.warn('Skipping non-Blob audioBlob during serialization:', rec.audioBlob);
-      return {
-          id: rec.id,
-          timestamp: rec.timestamp,
-          audioBase64: null,
-          audioType: null,
-          filename: rec.filename 
-      };
-    }
-  }));
-  localStorage.setItem('meetingRecordings', JSON.stringify(serializableRecordings));
-}, { deep: true });
-
-
 // Recorderpanel data 받아오기
 function handleRecordingFinished(data) {
-  const { audioBlob, filename, transcription } = data; 
-  const timestamp = new Date().toISOString();
-
-  console.log('handleRecordingFinished: 받은 blob,blob여부,파일명:', audioBlob, audioBlob instanceof Blob, filename);
-  console.log('handleRecordingFinished: 받은 전사본:', transcription);
-
-
-  recordings.value.push({ //새 녹음본 추가
-    id: generateUniqueId(),
-    audioBlob: audioBlob, 
-    timestamp: timestamp,
-    filename: filename || `회의록_${new Date(timestamp).toLocaleString().replace(/[:.]/g, '-')}`,
-    transcription: transcription // 오류의원인이었던것
+  const { audioBlob, filename, transcription } = data;
+  // delegate to composable addRecording to ensure persistence & normalization
+  addRecording({
+    audioBlob,
+    filename,
+    transcription
   });
 }
 
 // 지난회의목록 녹음본 삭제 처리
 function handleDeleteRecording(idtodelete) {
-  recordings.value = recordings.value.filter(rec => rec.id !== idtodelete);
+  deleteRecording(idtodelete);
 }
 
 // 지난회의목록 이름 변경 처리
-function handleUpdateRecordingFilename({ id, newFilename }) {
-  recordings.value = recordings.value.map(rec => {
-    if (rec.id === id) {
-      return { ...rec, filename: newFilename };
-    }
-    return rec;
-  });
+function handleUpdateRecordingFilename(payload) {
+  updateRecordingFilename(payload);
 }
 
 
@@ -246,7 +145,7 @@ body {
 </style>
 
 <style scoped>
-.app-container {
+.app-container { /*앱 전체 레이아웃*/
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -258,7 +157,7 @@ body {
 
 
 
-.header-bar {
+.header-bar { /*상단 헤더 바*/
   position: fixed;
   top: 0;
   left: 0;
@@ -276,7 +175,7 @@ body {
   overflow: hidden;
 }
 
-.header-content-wrapper {
+.header-content-wrapper { /*헤더 내부 컨텐츠 정렬*/
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -286,17 +185,17 @@ body {
   position: relative;
 }
 
-.logo-placeholder {
+.logo-placeholder { /*로고 영역*/
   flex-shrink: 0;
   margin-left: -24px;
 }
 
-.logo-img {
+.logo-img { /*로고 이미지*/
   height: 80px;
   object-fit: contain;
 }
 
-.tabs {
+.tabs { /*탭 버튼 영역*/
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
@@ -307,7 +206,7 @@ body {
   align-items: center;
 }
 
-.tab-button {
+.tab-button { /*탭 버튼 스타일*/
   font-family: 'PyeojinGothic-Bold', sans-serif;
   background: none;
   border: none;
@@ -323,7 +222,7 @@ body {
   flex-shrink: 0;
   transition: color 0.3s ease;
 }
-.api_box {
+.api_box { /*API 결과*/
   height: auto;
   position: fixed;
   top: 100px;
@@ -334,13 +233,13 @@ body {
   z-index: 1001;
 }
 
-.tab-button.active {
+.tab-button.active { /*활성화된 탭 버튼*/
   color: #fff;
 }
 
 
 
-.main-content {
+.main-content { /*메인 컨텐츠 영역*/
   flex: 1;
   background-color: #fff; 
   position: relative;

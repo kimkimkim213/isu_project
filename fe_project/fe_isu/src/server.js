@@ -1,6 +1,6 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const dotenv = require('dotenv'); // 환경변수 (API키 등) 관리용
+
 const cors = require('cors');
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');//요약용 API 수신

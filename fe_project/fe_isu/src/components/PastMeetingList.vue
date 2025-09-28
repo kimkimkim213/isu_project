@@ -25,8 +25,8 @@
 
       <!-- 재생바 -->
       <audio
-        v-if="meeting.audioUrl"
-        :src="meeting.audioUrl"
+        v-if="getAudioUrl(meeting)"
+        :src="getAudioUrl(meeting)"
         controls
         class="audio-player"
       ></audio>
@@ -34,8 +34,8 @@
       <div class="meeting-actions">
         <!-- 다운로드 -->
         <a
-          v-if="meeting.audioUrl"
-          :href="meeting.audioUrl"
+          v-if="getAudioUrl(meeting)"
+          :href="getAudioUrl(meeting)"
           :download="getAudioFileName(meeting)"
           class="action-button download"
         >
@@ -59,18 +59,15 @@
     </div>
     <p v-if="meetings.length === 0" class="no-meetings-message">저장된 대화가 없습니다.</p>
 
-    <!-- 삭제 확인, 정보 메시지  -->
-    <div v-if="showMessageModal" class="message-modal-overlay">
-      <div class="message-modal-content">
-        <h3>{{ messageModalTitle }}</h3>
-        <p>{{ messageModalContent }}</p>
-        <div class="modal-buttons" v-if="messageModalType === 'confirmDelete'">
-            <button @click="executeDeleteMeeting" class="confirm-button"> 삭제</button>
-            <button @click="closeMessageModal" class="cancel-button">취소</button>
-        </div>
-        <button v-else @click="closeMessageModal" class="ok-button">확인</button>
-      </div>
-    </div>
+    <!-- 삭제 확인, 정보 메시지: MessageModal 사용 -->
+    <MessageModal
+      :show="showMessageModal"
+      :title="messageModalTitle"
+      :content="messageModalContent"
+      :type="messageModalType === 'confirmDelete' ? 'confirm' : 'info'"
+      @confirm="executeDeleteMeeting"
+      @close="closeMessageModal"
+    />
 
     
     <div v-if="showTranscriptionModal" class="transcription-modal-overlay">
@@ -117,8 +114,12 @@
 </template>
 
 <script>
+import { getObjectUrl, revokeObjectUrl } from '@/utils';
+import MessageModal from '@/components/MessageModal.vue';
+
 export default {
   name: "PastMeetingList",
+  components: { MessageModal },
   props: {
     recordings: {
       type: Array,
@@ -141,20 +142,22 @@ export default {
       default: false
     }
   },
+  // components: {} (no local components registered)
   emits: ['delete-recording', 'update-recording-filename', 'request-summary', 'close-summary'], // 삭제 및 이름 수정 이벤트 추가
 
   data() {
     return {
       meetings: [],
+  audioUrlMap: {},
       editingMeetingId: null,
       editedFilename: '',
       
       
-      showMessageModal: false,
-      messageModalTitle: '',
-      messageModalContent: '',
-      messageModalType: '',
-      pendingDeleteId: null,
+    showMessageModal: false,
+    messageModalTitle: '',
+    messageModalContent: '',
+    messageModalType: 'info',
+    pendingDeleteId: null,
 
       
       showTranscriptionModal: false,
@@ -175,31 +178,40 @@ export default {
         
         console.log("PastMeetingList: recordings prop 변경 감지. 새로운 녹음본:", newRecordings); 
 
-        // 순서대로 정렬
-        const sortedRecordings = [...newRecordings].sort((a, b) => {
-          return new Date(b.timestamp) - new Date(a.timestamp); 
+        // Sort the recordings and set meetings array; create object URLs lazily
+        const sortedRecordings = [...newRecordings].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        // Revoke URLs for items no longer present
+        const newIds = new Set(sortedRecordings.map(r => r.id));
+        Object.keys(this.audioUrlMap).forEach(k => {
+          if (!newIds.has(k)) {
+            try { revokeObjectUrl(k); } catch (e) { /* ignore */ }
+            delete this.audioUrlMap[k];
+          }
         });
 
         this.meetings = sortedRecordings.map((rec) => {
-          const audioUrl = rec.audioBlob ? URL.createObjectURL(rec.audioBlob) : null;
           const date = new Date(rec.timestamp);
           const meetingItem = {
             id: rec.id,
             title: rec.filename || `녹음본 ${date.toLocaleString()}`,
             date: date.toLocaleString(),
-            audioUrl: audioUrl,
-
-            originalTimestamp: rec.timestamp, 
-            audioBlob: rec.audioBlob, 
-            transcription: rec.transcription || '텍스트 변환 결과 없음' // 얘진짜왜자꾸뜸
+            originalTimestamp: rec.timestamp,
+            audioBlob: rec.audioBlob,
+            transcription: rec.transcription || '텍스트 변환 결과 없음'
           };
-          console.log(`PastMeetingList: 매핑된 회의 항목 (ID: ${meetingItem.id}), 전사본: '${meetingItem.transcription}'`);
           return meetingItem;
         });
       }
     }
   },
   methods: {
+    getAudioUrl(meeting) {
+      if (!meeting || !meeting.audioBlob) return null;
+      if (this.audioUrlMap[meeting.id]) return this.audioUrlMap[meeting.id];
+      const url = getObjectUrl(meeting.id, meeting.audioBlob);
+      if (url) this.audioUrlMap[meeting.id] = url;
+      return url;
+    },
     getAudioFileName(meeting) {//다운로드할 파일명 지정
       
       const baseName = meeting.title.replace(/[\\/:*?"<>|]/g, '_');
@@ -208,17 +220,17 @@ export default {
     
     
     confirmDeleteMeeting(id, title) { // 삭제확인창 출력
-        this.pendingDeleteId = id;
-        this.displayMessageModal('녹음본 삭제', `'${title}' 녹음본을 삭제하시겠습니까?`, 'confirmDelete');
+      this.pendingDeleteId = id;
+      this.displayMessageModal('녹음본 삭제', `'${title}' 녹음본을 삭제하시겠습니까?`, 'confirmDelete');
     },
 
     
     executeDeleteMeeting() { //삭제확인창에서 삭제버튼 클릭시
-        if (this.pendingDeleteId) {
-            this.$emit('delete-recording', this.pendingDeleteId);//녹음본 삭제
-            this.closeMessageModal();
-            this.displayMessageModal('삭제 완료', '녹음본이 삭제되었습니다.');
-        }
+      if (this.pendingDeleteId) {
+        this.$emit('delete-recording', this.pendingDeleteId); // 녹음본 삭제
+        this.closeMessageModal();
+        this.displayMessageModal('삭제 완료', '녹음본이 삭제되었습니다.', 'info');
+      }
     },
 
     
@@ -273,7 +285,7 @@ export default {
    
     previewTranscription(meeting) { //텍스트화된 녹음본 - 미리보기
       if (!meeting.transcription || meeting.transcription === '텍스트 변환 결과 없음' || meeting.transcription.trim() === '') {
-        this.displayMessageModal('텍스트 없음', '이 녹음본에 대한 변환된 텍스트가 없습니다.');//겁나많이뜨던오류
+        this.displayMessageModal('텍스트 없음', '이 녹음본에 대한 변환된 텍스트가 없습니다.');//겁나많이뜸오류
         return;
       }
       this.currentMeeting = meeting;
@@ -316,8 +328,9 @@ export default {
 
     // 이전 화면으로 돌아가기
     goBackToInitialOptions() {
-      this.isTextViewerVisible = false;
+      // do not mutate parent prop; instead emit close-summary to parent
       this.internalShowSummary = false;
+      this.$emit('close-summary');
     },
     // 요약 요청
     requestSummary() {
@@ -328,7 +341,7 @@ export default {
     displayMessageModal(title, content, type = 'info') {
       this.messageModalTitle = title;
       this.messageModalContent = content;
-      this.messageModalType = type;
+      this.messageModalType = type === 'confirmDelete' ? 'confirm' : 'info';
       this.showMessageModal = true;
     },
 
@@ -336,36 +349,18 @@ export default {
       this.showMessageModal = false;
       this.messageModalTitle = '';
       this.messageModalContent = '';
-      this.messageModalType = '';
+      this.messageModalType = 'info';
       this.pendingDeleteId = null;
     }
   },
   
   beforeUnmount() {
-    this.meetings.forEach(meeting => {
-      if (meeting.audioUrl) {
-        URL.revokeObjectURL(meeting.audioUrl);
-      }
-    });
+    this.meetings.forEach(meeting => revokeObjectUrl(meeting.id));
   }
 };
 </script>
 
 <style scoped>
-.meeting-list {
-  padding: 20px;
-  max-width: 800px;
-  margin: 20px auto;
-  background-color: #f9f9f9;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-h2 {
-  text-align: center;
-  color: #333;
-  margin-bottom: 30px;
-  font-size: 2em;
-}
 .meeting-item {
   margin-bottom: 20px;
   padding: 15px;
@@ -471,17 +466,7 @@ h2 {
   z-index: 1050;
 }
 
-.message-modal-content {
-  background-color: white;
-  padding: 30px;
-  border-radius: 12px;
-  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.4);
-  max-width: 400px;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
+
 
 .message-modal-content h3 {
   margin: 0;
