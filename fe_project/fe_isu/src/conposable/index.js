@@ -53,46 +53,9 @@ export function useAudioMeter() {
 // --- ManageRecord ---
 import { watch, onMounted } from 'vue';
 
-// --- idbAudioStore (inline) ---
-import { openDB } from 'idb';
-
-const DB_NAME = 'isu_audio_store_v1';
-const STORE_NAME = 'audio_blobs';
-const DB_VERSION = 1;
-
-let dbPromise = null;
-function getDb() {
-	if (!dbPromise) {
-		dbPromise = openDB(DB_NAME, DB_VERSION, {
-			upgrade(db) {
-				if (!db.objectStoreNames.contains(STORE_NAME)) {
-					db.createObjectStore(STORE_NAME);
-				}
-			}
-		});
-	}
-	return dbPromise;
-}
-
-export async function putBlob(key, blob) {
-	const db = await getDb();
-	return db.put(STORE_NAME, blob, key);
-}
-
-export async function getBlob(key) {
-	const db = await getDb();
-	return db.get(STORE_NAME, key);
-}
-
-export async function deleteBlob(key) {
-	const db = await getDb();
-	return db.delete(STORE_NAME, key);
-}
-
-export async function clearAll() {
-	const db = await getDb();
-	return db.clear(STORE_NAME);
-}
+// idb audio store helpers (restored to original local names)
+// NOTE: IndexedDB persistence removed per request.
+// Recordings are kept in-memory (audioBlob present in runtime) and metadata saved to localStorage only.
 
 // 로컬메타데이터(localStorage) + IndexedDB(idbAudioStore)를 묶어
 // 녹음 목록을 관리하는 composable을 제공합니다.
@@ -105,9 +68,10 @@ export const STORAGE_KEY = 'meetingRecordings'; // localStorage에 저장할 키
 export async function blobToBase64(blob) {
 	return new Promise((resolve, reject) => {
 		const r = new FileReader();
-		r.onload = () => resolve(r.result); // dataURL 반환
-		r.onerror = reject; // 에러 시 reject
-		r.readAsDataURL(blob); // Blob을 dataURL로 읽음
+		r.onload = () => resolve(r.result);
+		r.onerror = reject;
+		console.debug('blobToBase64: readAsDataURL');
+		r.readAsDataURL(blob);
 	});
 }
 
@@ -127,9 +91,7 @@ export function base64ToBlob(base64, fallbackMime) {
 	return new Blob([arr], { type: mime });
 }
 
-function genId() {
-	return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-}
+function gid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
 /**
  * useRecordings()
@@ -147,22 +109,16 @@ export function useRecordings() {
 
 	onMounted(async () => {
 		try {
+			// Load metadata only from localStorage. Audio blobs are not persisted in this rollback.
 			const meta = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
 			for (const item of meta) {
-				try {
-					const blob = await getBlob(`audio-${item.id}`); // IndexedDB에서 Blob 로드
-					if (blob) {
-						recordings.value.push({
-							id: item.id || genId(),
-							timestamp: item.timestamp,
-							audioBlob: blob,
-							filename: item.filename,
-							transcription: item.transcription || ''
-						});
-					}
-				} catch (e) {
-					console.warn('ManageRecord: load blob failed', item.id, e);
-				}
+				recordings.value.push({
+					id: item.id || gid(),
+					timestamp: item.timestamp,
+					audioBlob: null, // blob persistence disabled
+					filename: item.filename,
+					transcription: item.transcription || ''
+				});
 			}
 		} catch (e) {
 			localStorage.removeItem(STORAGE_KEY);
@@ -174,10 +130,8 @@ export function useRecordings() {
 		_saveTimer = setTimeout(async () => {
 			try {
 				const meta = newRecs.map(r => ({ id: r.id, timestamp: r.timestamp, filename: r.filename, transcription: r.transcription || '' }));
-				for (const r of newRecs) {
-					try { if (r.audioBlob instanceof Blob) await putBlob(`audio-${r.id}`, r.audioBlob); } catch (e) { console.warn('putBlob failed', r.id, e); } // Blob 저장
-				}
-				localStorage.setItem(STORAGE_KEY, JSON.stringify(meta)); // 메타 저장
+				// audio blobs are not persisted to IndexedDB in this configuration
+				localStorage.setItem(STORAGE_KEY, JSON.stringify(meta));
 			} catch (e) {
 				console.error('ManageRecord: save failed', e);
 			}
@@ -185,15 +139,15 @@ export function useRecordings() {
 	}, { deep: true });
 
 	function addRecording({ audioBlob, filename, transcription }) {
-		const id = genId();
+		const id = gid();
 		const timestamp = new Date().toISOString();
+		// Keep blob in memory only; metadata will be saved to localStorage by watcher
 		recordings.value.push({ id, audioBlob, timestamp, filename: filename || `recording-${timestamp}`, transcription });
-		(async () => { try { if (audioBlob instanceof Blob) await putBlob(`audio-${id}`, audioBlob); } catch (e) { console.warn('save blob error', e); } })();
 	}
 
 	function deleteRecording(id) {
 		recordings.value = recordings.value.filter(r => r.id !== id);
-		(async () => { try { await deleteBlob(`audio-${id}`); } catch (e) { console.warn('deleteBlob failed', e); } })();
+		// No persistent blob to delete when persistence is disabled
 	}
 
 	function updateRecordingFilename({ id, newFilename }) {

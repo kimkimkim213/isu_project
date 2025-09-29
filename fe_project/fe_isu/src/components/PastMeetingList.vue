@@ -176,9 +176,9 @@ export default {
       immediate: true,
       handler(newRecordings) {
         
-        console.log("PastMeetingList: recordings prop 변경 감지. 새로운 녹음본:", newRecordings); 
-
-        // Sort the recordings and set meetings array; create object URLs lazily
+  console.debug('PastMeetingList: recordings prop changed');
+  console.log("PastMeetingList: recordings list:", newRecordings);
+  // 정렬 및 meetings 설정 (object URL은 지연 생성)
         const sortedRecordings = [...newRecordings].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         // Revoke URLs for items no longer present
         const newIds = new Set(sortedRecordings.map(r => r.id));
@@ -205,12 +205,12 @@ export default {
     }
   },
   methods: {
-    // object URL 캐시(인라인): id 기반으로 URL 생성/재사용
     getObjectUrlLocal(id, blob) {
       if (!id || !blob) return null;
       if (this.audioUrlMap[id]) return this.audioUrlMap[id];
       try {
         const url = URL.createObjectURL(blob);
+        console.debug('getObjectUrlLocal created for', id);
         this.audioUrlMap[id] = url;
         return url;
       } catch (e) {
@@ -231,20 +231,22 @@ export default {
       if (!meeting || !meeting.audioBlob) return null;
       return this.getObjectUrlLocal(meeting.id, meeting.audioBlob);
     },
-    getAudioFileName(meeting) {//다운로드할 파일명 지정
-      
+    getAudioFileName(meeting) {
+      console.debug('getAudioFileName for', meeting && meeting.id);
       const baseName = meeting.title.replace(/[\\/:*?"<>|]/g, '_');
       return `${baseName}.webm`;
     },
     
     
-    confirmDeleteMeeting(id, title) { // 삭제확인창 출력
+    confirmDeleteMeeting(id, title) {
+      console.debug('confirmDeleteMeeting', id, title);
       this.pendingDeleteId = id;
       this.displayMessageModal('녹음본 삭제', `'${title}' 녹음본을 삭제하시겠습니까?`, 'confirmDelete');
     },
 
     
-    executeDeleteMeeting() { //삭제확인창에서 삭제버튼 클릭시
+    executeDeleteMeeting() {
+      console.debug('executeDeleteMeeting', this.pendingDeleteId);
       if (this.pendingDeleteId) {
         this.$emit('delete-recording', this.pendingDeleteId); // 녹음본 삭제
         this.closeMessageModal();
@@ -253,7 +255,8 @@ export default {
     },
 
     
-    startEditingFilename(meeting) { //파일명 수정 - 시작
+    startEditingFilename(meeting) {
+      console.debug('startEditingFilename', meeting && meeting.id);
      
       if (this.editingMeetingId === meeting.id) {
         return;
@@ -272,7 +275,8 @@ export default {
     },
 
     
-    saveEditedFilename(id) { //파일명 수정 - 저장
+    saveEditedFilename(id) {
+      console.debug('saveEditedFilename', id);
       
       if (this.editingMeetingId !== id) {
         return;
@@ -302,7 +306,8 @@ export default {
     },
 
    
-    previewTranscription(meeting) { //텍스트화된 녹음본 - 미리보기
+    previewTranscription(meeting) {
+      console.debug('previewTranscription', meeting && meeting.id);
       if (!meeting.transcription || meeting.transcription === '텍스트 변환 결과 없음' || meeting.transcription.trim() === '') {
         this.displayMessageModal('텍스트 없음', '이 녹음본에 대한 변환된 텍스트가 없습니다.');//겁나많이뜸오류
         return;
@@ -315,12 +320,14 @@ export default {
     },
 
    
-    showFullTextView() { //전체화면
+    showFullTextView() {
+      console.debug('showFullTextView');
       this.isTextViewerVisible = true;
     },
 
     
-    downloadTranscriptionAsFile() { //텍스트화된 녹음본 - 파일로 다운로드
+    downloadTranscriptionAsFile() {
+      console.debug('downloadTranscriptionAsFile', this.currentTranscriptionFilename);
       if (!this.currentTranscriptionText) {
         this.displayMessageModal('다운로드 오류', '다운로드할 텍스트 내용이 없습니다.');
         return;
