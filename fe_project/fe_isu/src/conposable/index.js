@@ -53,9 +53,6 @@ export function useAudioMeter() {
 // --- ManageRecord ---
 import { watch, onMounted } from 'vue';
 
-// idb audio store helpers (restored to original local names)
-// NOTE: IndexedDB persistence removed per request.
-// Recordings are kept in-memory (audioBlob present in runtime) and metadata saved to localStorage only.
 
 // 로컬메타데이터(localStorage) + IndexedDB(idbAudioStore)를 묶어
 // 녹음 목록을 관리하는 composable을 제공합니다.
