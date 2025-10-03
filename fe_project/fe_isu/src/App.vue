@@ -45,7 +45,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, watch } from 'vue'
 import RecorderPanel from '@/components/RecorderPanel.vue'
 import PastMeetingList from '@/components/PastMeetingList.vue'
 
