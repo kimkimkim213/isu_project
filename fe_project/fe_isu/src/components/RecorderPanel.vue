@@ -1,57 +1,57 @@
 <template>
   <div class="recorder">
     <button
-      :class="['record-button', { 'recording': isRecording, 'options-active': showOptions }]"
-      @click="handleRecordButtonClick"
+      :class="['record-button', { 'recording': isRec, 'options-active': showOpts }]"
+      @click="onRecBtnClick"
     >
       <span
-        :class="['icon', { 'is-recording': isRecording, 'shifted-active': showOptions }]
+        :class="['icon', { 'is-recording': isRec, 'shifted-active': showOpts }]
         "
-        @click.stop="handleIconClick"
+        @click.stop="onIconClick"
       ></span>
 
-      <div v-if="showOptions && !showFilenamePrompt" class="options-container">
-        <button class="option-button" @click.stop="promptForSave">녹음본 저장하고 종료하기</button>
-        <button class="option-button" @click.stop="discardAndStopRecording">녹음본 저장하지 않고 종료하기</button>
+      <div v-if="showOpts && !showNamePrompt" class="options-container">
+        <button class="option-button" @click.stop="promptSave">녹음본 저장하고 종료하기</button>
+        <button class="option-button" @click.stop="discardRec">녹음본 저장하지 않고 종료하기</button>
       </div>
     </button>
 
-    <p v-if="isRecording && !showOptions && !showFilenamePrompt && !isTranscribing" class="recording-status-text">
+    <p v-if="isRec && !showOpts && !showNamePrompt && !isTranscribing" class="recording-status-text">
       녹음중...
     </p>
 
-    <div class="volume-bar-container" v-if="isRecording && !showOptions && !isTranscribing">
+    <div class="volume-bar-container" v-if="isRec && !showOpts && !isTranscribing">
       <div class="volume-bar" :style="{ width: volume + '%' }"></div>
     </div>
     <!-- Dim overlay for options and filename prompt -->
     <div
-      v-if="showOptions || showFilenamePrompt || showMessageModal || isTranscribing"
+      v-if="showOpts || showNamePrompt || showMsgModal || isTranscribing"
       class="dim-overlay"
-      @click="handleOverlayClick"
+      @click="onOverlayClick"
     ></div>
 
     <!-- Filename Input Prompt -->
-    <div v-if="showFilenamePrompt" class="filename-prompt-modal">
+    <div v-if="showNamePrompt" class="filename-prompt-modal">
       <h3>저장할 파일 이름을 입력해주세요.</h3>
       <input
         type="text"
-        v-model="filenameInput"
+        v-model="nameInput"
         placeholder="예: 2024년 6월 대화록"
         class="filename-input"
-        @keyup.enter="confirmSaveRecording"
+        @keyup.enter="confirmSave"
       />
       <div class="prompt-buttons">
-        <button class="prompt-button save" @click="confirmSaveRecording">저장</button>
-        <button class="prompt-button cancel" @click="cancelFilenamePrompt">취소</button>
+        <button class="prompt-button save" @click="confirmSave">저장</button>
+        <button class="prompt-button cancel" @click="cancelNamePrompt">취소</button>
       </div>
     </div>
 
     <!-- Custom Message Modal (instead of alert) -->
-    <div v-if="showMessageModal" class="message-modal-overlay">
+    <div v-if="showMsgModal" class="message-modal-overlay">
       <div class="message-modal-content">
-        <h3>{{ messageModalTitle }}</h3>
-        <p>{{ messageModalContent }}</p>
-        <button @click="closeMessageModal">확인</button>
+        <h3>{{ msgTitle }}</h3>
+        <p>{{ msgContent }}</p>
+        <button @click="closeMsg">확인</button>
       </div>
     </div>
 
@@ -68,319 +68,240 @@
 
 <script setup>
 import { ref } from "vue";
-import { onMounted } from 'vue';
 
-
-// Helper function to generate a unique ID
-function generateUniqueId() {
-  return Date.now().toString(36) + Math.random().toString(36).substring(2);
-}
-function base64ToBlob(base64, mimeType) {
-  if (!base64 || typeof base64 !== 'string') {
-    console.error('Invalid base64 string provided to base64ToBlob:', base64);
-    return null;
-  }
-  const parts = base64.split(';base64,');
-  if (parts.length < 2) {
-    console.error('Base64 string format is incorrect:', base64);
-    return null;
-  }
-  const contentType = parts[0].split(':')[1] || mimeType;
-  try {
-    const raw = window.atob(parts[1]);
-    const rawLength = raw.length;
-    const uInt8Array = new Uint8Array(rawLength);
-    for (let i = 0; i < rawLength; ++i) {
-      uInt8Array[i] = raw.charCodeAt(i);
-    }
-    return new Blob([uInt8Array], { type: contentType });
-  } catch (e) {
-    console.error('Error decoding base64 to blob:', e, base64);
-    return null;
-  }
-}
-
-const showFilenamePrompt = ref(false);
-const filenameInput = ref("");
-const isRecording = ref(false);
-const mediaRecorder = ref(null);
-const audioChunks = ref([]);
+const showNamePrompt = ref(false);
+const nameInput = ref("");
+const isRec = ref(false);
+const recorder = ref(null);
+const chunks = ref([]);
 const emit = defineEmits(["recording-finished"]);
 
-const showOptions = ref(false);
+const showOpts = ref(false);
 const volume = ref(0);
 const isTranscribing = ref(false); // 텍스트 변환 중 상태
-const currentMimeType = ref(''); // 녹음에 사용된 MIME 타입 저장
-const currentSampleRate = ref(0); // 녹음에 사용된 샘플링 레이트 저장
+const mimeType = ref(''); // 녹음 MIME 타입
+const sampleRate = ref(0); // 녹음 샘플링 레이트
 
-let currentStream = null;
+let stream = null;
 let analyser = null;
 let dataArray = null;
 let audioContext = null;
 let animationFrameId = null;
 
-// 붉은 원 (icon) 클릭 시 호출될 함수
-function handleIconClick() {
-  if (showMessageModal.value || isTranscribing.value) return; // 메시지/변환 모달이 떠있으면 다른 동작 방지
+// 아이콘 클릭
+function onIconClick() {
+  if (showMsgModal.value || isTranscribing.value) return;
 
-  if (showFilenamePrompt.value) {
-    // 파일명 입력 팝업이 떠 있는 상태에서 아이콘 클릭 시: 팝업 닫기 (취소)
-    cancelFilenamePrompt();
-  } else if (showOptions.value) {
-    // 옵션 팝업이 떠 있는 상태에서 아이콘 클릭 시: 팝업 닫기 (취소)
-    cancelOptions();
+  if (showNamePrompt.value) {
+    cancelNamePrompt();
+  } else if (showOpts.value) {
+    cancelOpts();
   } else {
-    // 팝업이 안 떠 있는 상태에서 아이콘 클릭 시: 녹음 토글 (시작/옵션 팝업 띄우기)
-    toggleRecording();
+    toggleRec();
   }
 }
 
-// record-button 배경 자체를 클릭 시 호출될 함수
-function handleRecordButtonClick() {
-  if (showMessageModal.value || isTranscribing.value) return; // 메시지/변환 모달이 떠있으면 다른 동작 방지
+// 녹음 버튼 클릭
+function onRecBtnClick() {
+  if (showMsgModal.value || isTranscribing.value) return;
 
-  if (!showOptions.value && !showFilenamePrompt.value) {
-    toggleRecording();
+  if (!showOpts.value && !showNamePrompt.value) {
+    toggleRec();
   }
-  // 팝업이 활성화된 상태에서 record-button 배경을 클릭하면
-  // dim-overlay가 클릭되면서 handleOverlayClick가 호출되므로 여기서는 아무것도 하지 않습니다.
 }
 
-// 오버레이 클릭 시 팝업 닫기 (옵션 팝업 또는 파일명 입력 팝업 또는 메시지 모달)
-function handleOverlayClick() {
-  if (showMessageModal.value) {
-    closeMessageModal();
+// 오버레이 클릭
+function onOverlayClick() {
+  if (showMsgModal.value) {
+    closeMsg();
   } else if (isTranscribing.value) {
-    // 변환 중에는 오버레이 클릭으로 닫히지 않도록 함 (작업 중단 방지)
     return; 
-  } else if (showFilenamePrompt.value) {
-    cancelFilenamePrompt();
-  } else if (showOptions.value) {
-    cancelOptions();
+  } else if (showNamePrompt.value) {
+    cancelNamePrompt();
+  } else if (showOpts.value) {
+    cancelOpts();
   }
 }
 
-async function toggleRecording() {
-  // 팝업이 활성화된 상태에서는 이 함수가 직접 호출되지 않도록 방어 로직
-  if (showOptions.value || showFilenamePrompt.value || showMessageModal.value || isTranscribing.value) {
+async function toggleRec() {
+  if (showOpts.value || showNamePrompt.value || showMsgModal.value || isTranscribing.value) {
     return;
   }
 
-  if (!isRecording.value) {
-    // 녹음 시작 로직
+  if (!isRec.value) {
+    // 녹음 시작
     try {
-      currentStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      // Web Audio API를 사용해 정확한 샘플링 레이트를 얻습니다.
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      currentSampleRate.value = audioContext.sampleRate; // 실제 샘플링 레이트 저장
-      console.log('AudioContext Sample Rate:', currentSampleRate.value);
-      startVolumeMeter(currentStream, audioContext); // audioContext를 넘겨주도록 수정
+      sampleRate.value = audioContext.sampleRate;
+  console.log('프: RecorderPanel - AudioContext 샘플레이트:', sampleRate.value);
+      startVolMeter(stream, audioContext);
 
-      // MediaRecorder 생성 전, 지원되는 MIME 타입 확인 (디버깅)
       const supportedMimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
-      currentMimeType.value = supportedMimeType; // 실제 MIME 타입 저장
-      console.log('Supported MIME Type for MediaRecorder:', currentMimeType.value);
+      mimeType.value = supportedMimeType;
+  console.log('프: RecorderPanel - 지원 MIME 타입:', mimeType.value);
 
-      // 미디어 레코더 옵션 지정
-      mediaRecorder.value = new MediaRecorder(currentStream, {
-        mimeType: currentMimeType.value, // 감지된 지원 타입 사용
-        audioBitsPerSecond: 64000 // 오디오 비트레이트를 명시적으로 64kbps로 설정 (더 안정적)
+      recorder.value = new MediaRecorder(stream, {
+        mimeType: mimeType.value,
+        audioBitsPerSecond: 64000
       });
 
-      mediaRecorder.value.ondataavailable = (event) => {
-        // 녹음 데이터 청크가 들어올 때마다 크기를 로그
-        console.log('Audio chunk received. Size:', event.data.size, 'bytes');
-        if (event.data.size > 0) { // 빈 청크는 무시
-          audioChunks.value.push(event.data);
+      recorder.value.ondataavailable = (event) => {
+  console.log('프: RecorderPanel - 오디오 청크 수신. 크기:', event.data.size);
+        if (event.data.size > 0) {
+          chunks.value.push(event.data);
         }
       };
 
-      mediaRecorder.value.onstop = () => {
-        // 모든 트랙 중지 (마이크 아이콘 끄기)
-        if (currentStream) {
-          currentStream.getTracks().forEach((track) => track.stop());
-          currentStream = null;
+      recorder.value.onstop = () => {
+        if (stream) {
+          stream.getTracks().forEach((track) => track.stop());
+          stream = null;
         }
-        stopVolumeMeter(); // 녹음 중지 시 볼륨 미터 중지
-        console.log('MediaRecorder stopped. Total chunks collected:', audioChunks.value.length);
-        const finalBlob = new Blob(audioChunks.value, { type: supportedMimeType }); // 최종 Blob 타입도 supportedMimeType 사용
-        console.log('Final Audio Blob size on stop:', finalBlob.size, 'bytes');
+        stopVolMeter();
+  console.log('프: RecorderPanel - Recorder 중지. 청크 수:', chunks.value.length);
+  const finalBlob = new Blob(chunks.value, { type: supportedMimeType });
+  console.log('프: RecorderPanel - 최종 Blob 크기:', finalBlob.size);
 
-        // 이 부분이 핵심 변경: onstop이 완료된 후에만 파일명 프롬프트/저장 로직이 진행되도록 여기서 처리
-        if (showOptions.value) { // "저장하고 종료하기" 옵션을 선택한 경우
-          if (audioChunks.value.length === 0) {
-              console.error("ERROR: No audio chunks were collected after stop! 녹음된 데이터가 없습니다.");
-              displayMessageModal("녹음 오류", "녹음된 데이터가 없습니다. 마이크가 제대로 작동하는지 확인해주세요.");
-              resetRecordingState();
+        if (showOpts.value) {
+          if (chunks.value.length === 0) {
+              showMsg("녹음 오류", "녹음된 데이터가 없습니다.");
+              resetState();
               return;
           }
-          // 기본 파일명 설정
-          filenameInput.value = `대화록_${new Date()
-            .toLocaleString("ko-KR", {
-              year: "numeric",
-              month: "2-digit",
-              day: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-              hour12: false,
-            })
-            .replace(/(\.\s*|\s*:\s*|\s*)/g, "-")
-            .replace(/\.$/, "")}`;
-          showFilenamePrompt.value = true;
-          showOptions.value = false; // 옵션 팝업 숨김
-        } else { 
-            // "저장하지 않고 종료하기" 옵션을 선택했거나 다른 방식으로 녹음이 중지된 경우
-            // 이 경우는 discardAndStopRecording()에서 이미 처리가 되므로,
-            // 추가적인 동작 없이 resetRecordingState()만 호출되도록 합니다.
-            // discardAndStopRecording()이 이미 resetRecordingState()를 호출하므로 중복 방지.
+          nameInput.value = `대화록_${new Date()
+            .toLocaleString("ko-KR", { hour12: false })
+            .replace(/[.\s:]/g, "-")}`;
+          showNamePrompt.value = true;
+          showOpts.value = false;
         }
       };
 
-      mediaRecorder.value.start();
-      isRecording.value = true;
-      console.log("녹음 시작됨");
+      recorder.value.start();
+  isRec.value = true;
+  console.log('프: RecorderPanel - 녹음 시작');
     } catch (error) {
       console.error("마이크 접근 오류:", error);
-      displayMessageModal(
-        "마이크 접근 오류",
-        "마이크 접근 권한이 필요합니다. 브라우저 설정에서 마이크 접근을 허용해주세요."
-      );
-      resetRecordingState(); // 오류 시 상태 초기화
+      showMsg("마이크 오류", "마이크 접근 권한이 필요합니다.");
+      resetState();
     }
   } else {
-    // 녹음 중일 때 버튼을 누르면 팝업 표시 (저장/취소 옵션)
-    showOptions.value = true;
-    console.log("녹음 중지 옵션 표시");
+  showOpts.value = true;
+  console.log('프: RecorderPanel - 녹음 중지 옵션 표시');
   }
 }
 
-// "녹음본 저장하고 종료하기" 버튼 클릭 시 호출
-async function promptForSave() {
-  if (mediaRecorder.value && mediaRecorder.value.state === "recording") {
-    mediaRecorder.value.stop(); // 녹음 중지 트리거. onstop이 나중에 호출됨
-    console.log("녹음 중지 트리거됨. onstop 이벤트 대기.");
+// 저장하고 종료
+async function promptSave() {
+  if (recorder.value && recorder.value.state === "recording") {
+  recorder.value.stop();
+  console.log('프: RecorderPanel - 녹음 중지. onstop 대기.');
   }
-  // 이전의 audioChunks.value.length === 0 검사는 여기서 제거했습니다.
-  // 이 검사는 onstop 콜백에서 이루어져야 합니다.
 }
 
-// 파일 이름 입력 후 "저장" 버튼 클릭 시 호출
-async function confirmSaveRecording() {
-  // onstop 이벤트에서 이미 audioChunks 유효성 검사를 했지만, 안전을 위해 여기서도 한번 더 확인
-  if (audioChunks.value.length === 0) {
-    console.error("ERROR: Cannot save. No audio chunks available at confirmSaveRecording.");
-    displayMessageModal("저장 오류", "저장할 녹음 데이터가 없습니다. 다시 녹음해 주세요.");
-    resetRecordingState();
+// 저장 확인
+async function confirmSave() {
+  if (chunks.value.length === 0) {
+    showMsg("저장 오류", "저장할 녹음 데이터가 없습니다.");
+    resetState();
     return;
   }
 
-  const audioBlob = new Blob(audioChunks.value, { type: 'audio/webm' }); 
+  const audioBlob = new Blob(chunks.value, { type: 'audio/webm' }); 
 
   if (audioBlob.size === 0) {
-    console.error("ERROR: Generated audio Blob is empty! Blob 크기가 0입니다.");
-    displayMessageModal(
-      "저장 오류",
-      "녹음 파일이 비어 있습니다. 마이크 입력이 없었을 수 있습니다."
-    );
-    resetRecordingState();
+    showMsg("저장 오류", "녹음 파일이 비어 있습니다.");
+    resetState();
     return;
   }
-  console.log('Sending Blob of size:', audioBlob.size, 'bytes to backend for transcription.');
+  console.log('프: RecorderPanel - STT API 전송 Blob 크기:', audioBlob.size);
 
+  const filename = nameInput.value.trim() || `대화록_${new Date().toLocaleString("ko-KR").replace(/[:.]/g, "-")}`;
 
-  // 파일명 확정
-  const filename = filenameInput.value.trim() || `대화록_${new Date().toLocaleString("ko-KR").replace(/[:.]/g, "-")}`;
-
-  // 텍스트 변환 시작 알림 및 스피너 표시
   isTranscribing.value = true;
-  showFilenamePrompt.value = false; // 파일명 입력 팝업 닫기
+  showNamePrompt.value = false;
   
   let transcription = '';
   try {
-    transcription = await sendToSpeechAPI(audioBlob);
-    console.log("전사 결과:", transcription);
-    displayMessageModal('텍스트 변환 완료', '음성 파일이 텍스트로 성공적으로 변환되었습니다!');
+    transcription = await sendToSTT(audioBlob);
+  console.log('프: RecorderPanel - 전사 결과:', transcription);
+    showMsg('변환 완료', '음성이 텍스트로 변환되었습니다!');
   } catch (error) {
-    console.error('텍스트 변환 오류:', error);
-    displayMessageModal('텍스트 변환 오류', '음성 텍스트 변환 중 문제가 발생했습니다. 백엔드 서버를 확인해주세요.');
-    transcription = '텍스트 변환 실패: ' + (error.message || '알 수 없는 오류');
+    console.error('STT 오류:', error);
+    showMsg('STT 오류', '음성 변환 중 문제가 발생했습니다.');
+    transcription = '텍스트 변환 실패';
   } finally {
-    isTranscribing.value = false; // 변환 완료 (성공/실패 무관)
+    isTranscribing.value = false;
   }
 
-  // App.vue로 Blob 데이터, 파일명, 전사 결과 함께 전달
   emit('recording-finished', { audioBlob, filename, transcription }); 
-  console.log(`녹음본 "${filename}" 저장 및 종료`);
-  resetRecordingState(); // 상태 초기화
+  console.log(`프: RecorderPanel - 녹음 "${filename}" 저장`);
+  resetState();
 }
 
-// 팝업 - "녹음본 저장하지 않고 종료하기" (또는 파일명 입력 취소 시)
-function discardAndStopRecording() {
-  if (mediaRecorder.value && mediaRecorder.value.state === "recording") {
-    mediaRecorder.value.stop(); // 녹음 중지
+// 저장 안하고 종료
+function discardRec() {
+  if (recorder.value && recorder.value.state === "recording") {
+    recorder.value.stop();
   }
-  audioChunks.value = []; // 데이터 버림
-  console.log("녹음본 저장하지 않고 종료");
-  displayMessageModal("녹음 삭제", "녹음본이 저장되지 않고 삭제되었습니다.");
-  resetRecordingState();
+  chunks.value = [];
+  console.log('프: RecorderPanel - 녹음 저장 안함');
+  showMsg("녹음 삭제", "녹음본이 저장되지 않았습니다.");
+  resetState();
 }
 
-// 파일명 입력 팝업에서 "취소" 버튼 클릭 시
-function cancelFilenamePrompt() {
-  console.log("파일명 입력 취소. 녹음본 삭제 처리.");
-  discardAndStopRecording(); // 파일명 입력을 취소하면 해당 녹음본은 버려짐
+// 파일명 입력 취소
+function cancelNamePrompt() {
+  console.log('프: RecorderPanel - 파일명 입력 취소');
+  discardRec();
 }
 
-// 팝업 - "취소" (녹음을 계속하고 팝업 닫기)
-function cancelOptions() {
-  showOptions.value = false;
-  console.log("녹음 중지 옵션 취소, 녹음 계속");
-  // 녹음 자체는 mediaRecorder.stop()이 호출되기 전까지 계속됨.
-  // 이 함수는 단순히 옵션 팝업만 닫음.
+// 옵션 취소
+function cancelOpts() {
+  showOpts.value = false;
+  console.log('프: RecorderPanel - 녹음 계속');
 }
 
-// 모든 상태를 초기화하는 헬퍼 함수
-function resetRecordingState() {
-  isRecording.value = false;
-  showOptions.value = false;
-  showFilenamePrompt.value = false;
-  filenameInput.value = "";
-  audioChunks.value = [];
-  isTranscribing.value = false; // 변환 상태도 초기화
-  if (currentStream) {
-    currentStream.getTracks().forEach((track) => track.stop());
-    currentStream = null;
+// 상태 초기화
+function resetState() {
+  isRec.value = false;
+  showOpts.value = false;
+  showNamePrompt.value = false;
+  nameInput.value = "";
+  chunks.value = [];
+  isTranscribing.value = false;
+  if (stream) {
+    stream.getTracks().forEach((track) => track.stop());
+    stream = null;
   }
-  mediaRecorder.value = null; // Recorder 객체도 리셋하여 새 녹음 준비
-  stopVolumeMeter(); // 볼륨 미터 중지
+  recorder.value = null;
+  stopVolMeter();
 }
 
-// Custom Message Modal (for errors/information) - replacing alert)
-const showMessageModal = ref(false);
-const messageModalTitle = ref("");
-const messageModalContent = ref("");
+// 메시지 모달
+const showMsgModal = ref(false);
+const msgTitle = ref("");
+const msgContent = ref("");
 
-function displayMessageModal(title, content) {
-  messageModalTitle.value = title;
-  messageModalContent.value = content;
-  showMessageModal.value = true;
+function showMsg(title, content) {
+  msgTitle.value = title;
+  msgContent.value = content;
+  showMsgModal.value = true;
 }
 
-function closeMessageModal() {
-  showMessageModal.value = false;
-  messageModalTitle.value = "";
-  messageModalContent.value = "";
+function closeMsg() {
+  showMsgModal.value = false;
+  msgTitle.value = "";
+  msgContent.value = "";
 }
 
-// ===== Web Audio API for Volume Meter =====
-function startVolumeMeter(stream, context) { // context 인자 추가
+// 볼륨 미터 시작
+function startVolMeter(stream, context) {
   if (!context) return;
-  audioContext = context; // 전달받은 context 사용
+  audioContext = context;
   
-  // 실제 오디오 컨텍스트의 샘플 레이트 로그
-  console.log('AudioContext Sample Rate:', audioContext.sampleRate); 
+  console.log('프: RecorderPanel - AudioContext 샘플레이트:', audioContext.sampleRate); 
 
   const source = audioContext.createMediaStreamSource(stream);
   analyser = audioContext.createAnalyser();
@@ -398,7 +319,7 @@ function startVolumeMeter(stream, context) { // context 인자 추가
       sum += dataArray[i];
     }
     const avg = sum / bufferLength;
-    volume.value = Math.min(100, Math.round((avg / 255) * 100)); // 0-100% 스케일
+    volume.value = Math.min(100, Math.round((avg / 255) * 100));
 
     animationFrameId = requestAnimationFrame(updateVolume);
   };
@@ -406,7 +327,8 @@ function startVolumeMeter(stream, context) { // context 인자 추가
   updateVolume();
 }
 
-function stopVolumeMeter() {
+// 볼륨 미터 중지
+function stopVolMeter() {
   if (animationFrameId) {
     cancelAnimationFrame(animationFrameId);
   }
@@ -415,102 +337,56 @@ function stopVolumeMeter() {
         audioContext = null;
         analyser = null;
         dataArray = null;
-    }).catch(e => console.error("Error closing audio context:", e));
+    }).catch(e => console.error("오디오 컨텍스트 닫기 오류:", e));
   }
   volume.value = 0;
 }
 
-// ===== Google Speech-to-Text API 호출 (백엔드 프록시를 통해) =====
-async function sendToSpeechAPI(audioBlob) {
-  return new Promise((resolve, reject) => {
+// Blob -> base64 변환(간단한 async 래퍼)
+async function blobToBase64(blob) {
+  return await new Promise((resolve, reject) => {
     const reader = new FileReader();
-
-    reader.onload = async () => {
-      const base64DataUrl = reader.result;
-      const base64Audio = base64DataUrl.split(',')[1];
-
+    reader.onload = () => {
       try {
-        const res = await fetch('http://localhost:3001/api/transcribe', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ 
-            audio: base64Audio,
-            sampleRate: currentSampleRate.value,
-            mimeType: currentMimeType.value 
-          }),
-        });
-
-        if (!res.ok) {
-          const errorText = await res.text();
-          throw new Error(`STT API error: ${res.status} - ${errorText}`);
-        }
-
-        const data = await res.json();
-        if (data.transcription) {
-          resolve(data.transcription);
-        } else {
-          console.warn('STT API response missing transcription:', data);
-          // 빈 텍스트를 반환할 경우 '변환된 텍스트가 없습니다.' 메시지로 처리
-          resolve('변환된 텍스트가 없습니다.'); 
-        }
-      } catch (error) {
-        console.error('sendToSpeechAPI 호출 실패:', error);
-        // 네트워크 또는 서버 오류일 경우 상세 메시지 포함
-        reject(error);
+        const base64DataUrl = reader.result;
+        const base64Audio = base64DataUrl.split(',')[1];
+        resolve(base64Audio);
+      } catch (e) {
+        reject(e);
       }
     };
-
-    reader.onerror = (error) => {
-      console.error("FileReader 오류:", error);
-      reject(error);
-    };
-
-    reader.readAsDataURL(audioBlob);
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(blob);
   });
 }
 
-// 기존의 저장된 녹음 목록 불러오기 (로컬 스토리지 등에서)
-const storedRecordings = ref([]); // 여기에 저장된 녹음 데이터 배열이 들어옵니다.
+// STT API 호출 (간단한 async/await 흐름)
+async function sendToSTT(audioBlob) {
+  try {
+    const base64Audio = await blobToBase64(audioBlob);
 
-// recordings 배열: 저장된 녹음 목록
-const recordings = ref([]);
+    const res = await fetch('http://localhost:3001/api/transcribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        audio: base64Audio,
+        sampleRate: sampleRate.value,
+        mimeType: mimeType.value,
+      }),
+    });
 
-// 저장된 녹음 불러오기 함수
-function loadStoredRecordings() {
-  // 여기서는 예시로 로컬 스토리지에서 불러온다고 가정합니다.
-  const stored = localStorage.getItem('recordings');
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored);
-      storedRecordings.value = parsed;
-      // parsed 배열을 recordings 배열에 추가
-      parsed.forEach(item => {
-        if (item.audioBase64 && item.audioType) {
-          const blob = base64ToBlob(item.audioBase64, item.audioType);
-          if (blob) {
-            recordings.value.push({
-              id: item.id || generateUniqueId(),
-              timestamp: item.timestamp,
-              audioBlob: blob,
-              filename: item.filename,
-              transcription: item.transcription // 추가
-            });
-          }
-        }
-      });
-      console.log('Stored recordings loaded:', recordings.value);
-    } catch (error) {
-      console.error('Error loading stored recordings:', error);
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`STT API 오류: ${res.status} - ${errorText}`);
     }
+
+    const data = await res.json();
+    return data.transcription || '변환된 텍스트가 없습니다.';
+  } catch (error) {
+    console.error('프: RecorderPanel - sendToSTT 실패:', error);
+    throw error; // 호출자에서 처리
   }
 }
-
-// 컴포넌트가 마운트될 때 저장된 녹음 불러오기
-onMounted(() => {
-  loadStoredRecordings();
-});
 </script>
 
 <style scoped>
@@ -527,83 +403,76 @@ onMounted(() => {
 
 .record-button {
   position: relative;
-  width: 200px; /* 초기 원형 버튼 크기 */
-  height: 200px; /* 초기 원형 버튼 크기 */
+  width: 200px;
+  height: 200px;
   border: 1px solid #ccc;
-  border-radius: 50%; /* 초기 원형 */
+  border-radius: 50%;
   background-color: #e0e0e0;
   display: flex;
   align-items: center;
-  justify-content: center; /* 초기에는 내부 아이콘 중앙 정렬 */
+  justify-content: center;
   cursor: pointer;
-  transition: all 0.3s ease; /* 모든 속성에 애니메이션 */
+  transition: all 0.3s ease;
   padding: 0;
   z-index: 10;
-  overflow: hidden; /* 내부 요소가 넘치지 않도록 */
+  overflow: hidden;
 }
 
-/* 붉은 아이콘: 초기엔 원형, 녹음 중엔 사각형, 팝업 활성화 시 왼쪽으로 이동하는 사각형 */
 .record-button .icon {
-  width: 80px; /* 초기 원형 아이콘 크기 */
-  height: 80px; /* 초기 원형 아이콘 크기 */
+  width: 80px;
+  height: 80px;
   background-color: #ff1744;
-  border-radius: 50%; /* 초기 원형 */
-  transition: all 0.3s ease; /* 모든 속성에 애니메이션 */
-  flex-shrink: 0; /* flex 컨테이너 안에서 줄어들지 않도록 */
-  position: relative; /* transform 적용을 위해 */
-  left: 0; /* 초기 위치 */
-  margin-left: 0; /* 초기 마진 없음 */
+  border-radius: 50%;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+  position: relative;
+  left: 0;
+  margin-left: 0;
 }
 
-/* 녹음 중일 때의 아이콘 (작은 붉은 사각형) */
 .record-button .icon.is-recording {
-  border-radius: 16px; /* 사각형 */
+  border-radius: 16px;
   width: 60px;
   height: 60px;
   background-color: #d50000;
 }
 
-/* record-button 자체가 팝업 형태로 확장될 때 */
 .record-button.options-active {
-  /* --- 팝업 크기 및 비율 조절 --- */
-  width: 70vw;   /* 뷰포트 너비의 70% */
-  height: 35vh;  /* 뷰포트 높이의 35% */
-  max-width: 900px; /* 최대 너비 제한 */
-  max-height: 450px; /* 최대 높이 제한 */
-  border-radius: 16px; /* 둥근 사각형 */
-  background-color: #f0f0f0; /* 배경색 변경 */
-  justify-content: flex-start; /* 아이콘을 왼쪽으로 정렬 */
+  width: 70vw;
+  height: 35vh;
+  max-width: 900px;
+  max-height: 450px;
+  border-radius: 16px;
+  background-color: #f0f0f0;
+  justify-content: flex-start;
   padding: 0;
   z-index: 10;
-  overflow: hidden; /* 내부 요소가 넘치지 않도록 */
+  overflow: hidden;
 }
 
-/* 팝업 활성화 시 붉은 아이콘의 최종 상태 (사각형 + 왼쪽 이동) */
 .record-button.options-active .icon.shifted-active {
-  border-radius: 16px; /* 사각형 */
-  width: 100px; /* 이미지에 맞게 크기 유지 */
-  height: 100px; /* 이미지에 맞게 크기 유지 */
-  background-color: #ff1744; /* 이미지처럼 다시 밝은 붉은색 */
-  margin-left: 25px; /* 이미지처럼 왼쪽 여백 */
+  border-radius: 16px;
+  width: 100px;
+  height: 100px;
+  background-color: #ff1744;
+  margin-left: 25px;
 }
 
 
-/* 팝업 내용 컨테이너 (오른쪽에 나타날 요소) */
 .options-container {
   display: flex;
   flex-direction: column;
-  gap: 15px; /* 버튼 간 간격 */
-  flex-grow: 1; /* 남은 공간 모두 차지 */
-  align-items: center; /* 버튼 수평 중앙 정렬 */
-  justify-content: center; /* 버튼 수직 중앙 정렬 */
-  padding: 20px; /* 컨테이너 내부 패딩 */
-  opacity: 0; /* 초기에는 숨김 */
-  transform: translateX(20px); /* 오른쪽에서 나타나는 애니메이션 시작점 */
-  transition: opacity 0.3s ease 0.1s, transform 0.3s ease 0.1s; /* 지연 후 나타남 */
-  z-index: 11; /* record-button 내 다른 요소보다 위 */
+  gap: 15px;
+  flex-grow: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  opacity: 0;
+  transform: translateX(20px);
+  transition: opacity 0.3s ease 0.1s, transform 0.3s ease 0.1s;
+  z-index: 11;
 }
 
-/* 팝업 활성화 시 options-container 나타남 */
 .record-button.options-active .options-container {
   opacity: 1;
   transform: translateX(0);
@@ -622,7 +491,6 @@ onMounted(() => {
   z-index: 5;
 }
 
-/* 팝업 배경을 어둡게 하는 오버레이 */
 .dim-overlay {
   position: fixed;
   top: 0;
@@ -630,13 +498,12 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   background-color: rgba(0, 0, 0, 0.4);
-  z-index: 5; /* record-button 보다 아래에 */
+  z-index: 5;
   transition: opacity 0.3s ease;
 }
 
-/* 옵션 버튼 스타일 */
 .option-button {
-  width: 90%; /* 컨테이너 내에서 너비 조정 */
+  width: 90%;
   padding: 15px 20px;
   font-size: 1.2em;
   font-weight: 500;
@@ -653,7 +520,6 @@ onMounted(() => {
   border-color: #aaa;
 }
 
-/* Filename Input Modal Styles */
 .filename-prompt-modal {
   position: fixed;
   top: 50%;
@@ -663,7 +529,7 @@ onMounted(() => {
   padding: 30px;
   border-radius: 12px;
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-  z-index: 20; /* Overlays everything else */
+  z-index: 20;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -727,7 +593,6 @@ onMounted(() => {
   transform: translateY(-1px);
 }
 
-/* Custom Message Modal */
 .message-modal-overlay {
   position: fixed;
   top: 0;
@@ -738,7 +603,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 30; /* Ensure it's on top of other modals */
+  z-index: 30;
 }
 
 .message-modal-content {
@@ -799,23 +664,22 @@ onMounted(() => {
   transition: width 0.1s linear;
 }
 
-/* Transcription Loading Modal Styles */
 .transcribing-modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.7); /* 더 어두운 오버레이 */
+  background-color: rgba(0, 0, 0, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 40; /* 가장 위에 표시 */
+  z-index: 40;
 }
 
 .transcribing-modal-content {
-  background-color: #222; /* 어두운 배경색 */
-  color: #fff; /* 흰색 텍스트 */
+  background-color: #222;
+  color: #fff;
   padding: 40px;
   border-radius: 12px;
   box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);

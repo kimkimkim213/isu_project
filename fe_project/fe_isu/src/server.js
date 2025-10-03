@@ -1,6 +1,6 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const dotenv = require('dotenv'); // 환경변수 (API키 등) 관리용
+// 환경변수 관리는 아래 config 호출로 처리합니다
 const cors = require('cors');
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');//요약용 API 수신
@@ -47,8 +47,8 @@ app.post('/api/transcribe', async (req, res) => {
     }
 
     const audioBuffer = Buffer.from(base64Audio, 'base64');
-    console.log('Received audio buffer size:', audioBuffer.length, 'bytes');
-    console.log(`Received audio properties: Sample Rate=${sampleRate}, Mime Type=${mimeType}`);
+  console.log('백: 수신된 오디오 버퍼 크기:', audioBuffer.length, '바이트');
+  console.log(`백: 수신된 오디오 속성: 샘플레이트=${sampleRate}, MIME=${mimeType}`);
 
     const audio = {
       content: audioBuffer.toString('base64'),
@@ -69,11 +69,11 @@ app.post('/api/transcribe', async (req, res) => {
       diarizationSpeakerCount: 2
     };
 
-    console.log('Sending request to Google with config:', JSON.stringify(config, null, 2));
+  console.log('백: Google 전송 설정:', JSON.stringify(config, null, 2));
 
     const [response] = await speechClient.recognize({ audio, config });
 
-    console.log('Google Speech-to-Text API 응답:', JSON.stringify(response, null, 2));
+  console.log('백: Google STT 응답:', JSON.stringify(response, null, 2));
 
     const transcription = response.results
       .map(result => result.alternatives[0].transcript)
@@ -82,11 +82,11 @@ app.post('/api/transcribe', async (req, res) => {
   
     res.json({ transcription });
   } catch (error) {
-    console.error('전사 중 오류:', error);
+  console.error('백: 전사 중 오류:', error);
     res.status(500).json({ error: '전사 실패', details: error.message });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`백엔드 서버 실행 중: http://localhost:${PORT}`);
+  console.log(`백: 서버 실행 중: http://localhost:${PORT}`);
 });
