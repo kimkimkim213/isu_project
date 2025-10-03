@@ -1,6 +1,6 @@
 <template>
   <div class="manage-recording">
-    <recorder-panel @recording-finished="handleRecordingComplete"></recorder-panel>
+  <recorder-panel @recording-finished="onRecordingComplete"></recorder-panel>
     <past-meeting-list 
       :recordings="recordings" 
       @delete-recording="deleteRecording"
@@ -12,9 +12,8 @@
 <script>
 import RecorderPanel from './RecorderPanel.vue';
 import PastMeetingList from './PastMeetingList.vue';
-import { useRecordings } from '../conposable/ManageRecord.js';
-import { ref, onMounted } from 'vue';
-import axios from 'axios';
+import { useRecs } from '@/conposable';
+import { ref } from 'vue';
 
 export default {
   name: 'ManageRecording',
@@ -23,23 +22,21 @@ export default {
     PastMeetingList
   },
   setup() {
-    const { recordings, addRecording, deleteRecording, updateRecordingFilename } = useRecordings();
+  const { recordings, addRecording, deleteRecording, renameRecording } = useRecs();
     const error = ref(null);
 
-    const handleRecordingComplete = ({ audioBlob, filename, transcription }) => {
+    // 한 줄 주석: RecorderPanel에서 전달된 녹음 데이터 처리
+    // 녹음 완료 이벤트 수신
+    const onRecordingComplete = ({ audioBlob, filename, transcription }) => {
       console.log('ManageRecording: recording-finished 이벤트 수신. 전사 결과:', transcription);
-      addRecording({
-        audioBlob: audioBlob,
-        filename: filename,
-        transcription: transcription
-      });
+      addRecording({ audioBlob, filename, transcription });
     };
 
     return {
       recordings,
       deleteRecording,
-      updateRecordingFilename,
-      handleRecordingComplete,
+        updateRecordingFilename: renameRecording,
+        onRecordingComplete,
       error
     };
   }

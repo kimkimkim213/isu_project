@@ -1,4 +1,4 @@
-// src/main.js
+// 앱 엔트리포인트
 import { createApp } from 'vue';
 import App from './App.vue';
 import '@/assets/fonts.css';
