@@ -1,3 +1,0 @@
-[eslint] 
-C:\Users\user\OneDrive\바탕 화면\isu_project\fe_project\fe_isu\src\components\PastMeetingList.vue
-  318:7  error  Unexpected mutation of "showSummary" prop  vue/no-mutating-props
