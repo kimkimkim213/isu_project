@@ -74,7 +74,7 @@ const showSum = ref(false);
 // 요약 요청
 async function onSumReq(meeting) {
   if (!meeting || !meeting.transcription || meeting.transcription.trim() === '') {
-  console.warn('프: App - 요약할 텍스트가 없습니다.');
+  console.warn('프: App - 요약 텍스트 없음');
     return;
   }
   isSum.value = true;
@@ -98,10 +98,10 @@ async function onSumReq(meeting) {
     const data = await response.json();
     sumText.value = data.summary;
     showSum.value = true;
-  console.log('프: App - 요약 완료:', data.summary);
+  console.log('프: App - 요약 완료');
 
   } catch (error) {
-  console.error('프: App - 요약 중 오류:', error);
+  console.error('프: App - 요약 오류:', error);
     sumText.value = `요약 실패: ${error.message}`;
     showSum.value = true;
   } finally {

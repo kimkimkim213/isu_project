@@ -12,6 +12,8 @@
     "@google/generative-ai": "^0.24.1",
     "@grpc/grpc-js": "^1.13.4",
     "@grpc/proto-loader": "^0.7.15",
+    "ffmpeg-static": "^4.4.0",
+    "fluent-ffmpeg": "^2.1.2",
     "@vueuse/core": "^13.3.0",
     "axios": "^1.10.0",
     "body-parser": "^2.2.0",

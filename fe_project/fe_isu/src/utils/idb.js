@@ -1,16 +1,16 @@
-// Lightweight promise-based IndexedDB helper for recordings
-// Provides: openDB, getAllRecords, putRecord, deleteRecord, clearDB
+
 const DB_NAME = 'isu_recordings_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'recordings';
 
+// IDB 연결 및 초기화
 function openDB() {
   return new Promise((resolve, reject) => {
-    console.log('IDB: opening database', DB_NAME, 'v', DB_VERSION);
+  console.log('IDB: DB 열기', DB_NAME, 'v', DB_VERSION);
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (event) => {
       const db = event.target.result;
-      console.log('IDB: onupgradeneeded - creating stores if needed');
+  console.log('IDB: onupgradeneeded - 스토어 생성 확인');
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
         store.createIndex('timestamp', 'timestamp', { unique: false });
@@ -21,10 +21,11 @@ function openDB() {
   });
 }
 
-async function getAllRecords() {
+// 모든 녹음본 조회
+async function getAll() {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    console.log('IDB: getAllRecords - starting transaction');
+  console.log('IDB: getAllRecords - 트랜잭션 시작');
     const tx = db.transaction(STORE_NAME, 'readonly');
     const store = tx.objectStore(STORE_NAME);
     const req = store.getAll();
@@ -33,10 +34,11 @@ async function getAllRecords() {
   });
 }
 
-async function putRecord(record) {
+// 녹음본 추가/갱신
+async function put(record) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    console.log('IDB: putRecord - id=', record && record.id);
+  console.log('IDB: putRecord - id=', record && record.id);
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
     const req = store.put(record);
@@ -45,10 +47,11 @@ async function putRecord(record) {
   });
 }
 
-async function deleteRecord(id) {
+// id로 녹음본 삭제
+async function del(id) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    console.log('IDB: deleteRecord - id=', id);
+  console.log('IDB: deleteRecord - id=', id);
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
     const req = store.delete(id);
@@ -57,7 +60,8 @@ async function deleteRecord(id) {
   });
 }
 
-async function clearDB() {
+// 전체 녹음본 삭제
+async function clear() {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -68,4 +72,4 @@ async function clearDB() {
   });
 }
 
-export { getAllRecords, putRecord, deleteRecord, clearDB };
+export { getAll, put, del, clear };

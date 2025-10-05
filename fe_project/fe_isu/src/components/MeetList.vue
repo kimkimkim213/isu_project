@@ -169,7 +169,7 @@ export default {
       immediate: true,
       handler(newRecs) {
   // 녹음 목록 갱신
-  console.log('프: MeetList - records 갱신:', newRecs.length);
+  console.log('프: MeetList - 목록 갱신. 수:', newRecs.length);
 
         // 시간순 정렬
         const sortedRecs = [...newRecs].sort((a, b) => {
@@ -189,7 +189,7 @@ export default {
             audioBlob: rec.audioBlob, 
             transcription: rec.transcription || '텍스트 변환 결과 없음'
           };
-          console.log(`프: MeetList - 매핑된 회의 항목 (ID: ${meetItem.id}), 전사본: '${meetItem.transcription}'`);
+          console.log(`프: MeetList - 항목 매핑 ID:${meetItem.id} 전사 길이:${(meetItem.transcription||'').length}`);
           return meetItem;
         });
       }

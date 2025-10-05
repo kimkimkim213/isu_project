@@ -43,3 +43,17 @@ pnpm-debug.log*
 
 fe_project/node_modules/
 fe_project/dist/
+.txt
+.md
+.log
+.json
+*.txt
+*.log
+*.md
+*.json
+*.yml
+*.yaml
+*.xml
+*.csv
+*.ts
+*.tsx
