@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 
 // --------------------- 유틸 ---------------------
-export async function blobToBase64(blob) {
+export async function blobToB64(blob) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(r.result);
@@ -13,9 +13,9 @@ export async function blobToBase64(blob) {
 
 // fetch 타임아웃 헬퍼
 // 기본 타임아웃 상수
-export const DEFAULT_FETCH_TIMEOUT = 20000;
+export const DEFAULT_TIMEOUT = 20000;
 
-export async function fetchWithTimeout(url, opts = {}, timeout = DEFAULT_FETCH_TIMEOUT) {
+export async function fetchTimeout(url, opts = {}, timeout = DEFAULT_TIMEOUT) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   try {

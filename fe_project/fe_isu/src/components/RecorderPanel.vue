@@ -35,7 +35,7 @@
       <h3>저장할 파일 이름을 입력해주세요.</h3>
       <input
         type="text"
-        v-model="nameInput"
+        v-model="filenameInput"
         placeholder="예: 2024년 6월 대화록"
         class="filename-input"
         @keyup.enter="confirmSave"
@@ -70,7 +70,7 @@
 import { ref } from "vue";
 
 const showNamePrompt = ref(false);
-const nameInput = ref("");
+const filenameInput = ref("");
 const isRec = ref(false);
 const recorder = ref(null); // 소형 컨트롤러 {state, stop}
 const chunks = ref([]); // 레거시 호환용(주 사용 아님)
@@ -94,7 +94,7 @@ let scriptNode = null;
 let sourceNode = null;
 
 // 캡처 노드 초기화: worklet 우선, 없으면 script processor로 폴백
-function setupCaptureNodes(s, context) {
+function initCapture(s, context) {
   sourceNode = context.createMediaStreamSource(s);
 
   // AudioWorklet 시도
@@ -137,7 +137,7 @@ function setupCaptureNodes(s, context) {
 }
 
 // 캡처 노드 정리 및 스트림 정지
-function cleanupCaptureNodes() {
+function cleanupCapture() {
   try {
     if (workletNode) {
       try { workletNode.port.close(); } catch (e) { console.warn('프: RecorderPanel - worklet port close 에러(무시):', e); }
@@ -205,19 +205,19 @@ async function toggleRec() {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      sampleRate.value = audioContext.sampleRate;
+    sampleRate.value = audioContext.sampleRate;
   console.log('프: RecorderPanel - 샘플레이트:', sampleRate.value);
-      startVolMeter(stream, audioContext);
+    startMeter(stream, audioContext);
   // PCM 직접 캡처 준비(AudioWorklet 우선)
       pcmChunks = [];
       lastWavBlob.value = null;
-      // 캡처 노드 일괄 초기화
-      setupCaptureNodes(stream, audioContext);
+  // 캡처 노드 일괄 초기화
+  initCapture(stream, audioContext);
 
       // create a small controller-like object to mimic MediaRecorder API used elsewhere
       recorder.value = {
         state: 'recording',
-        stop: () => stopRecording()
+        stop: () => stopRec()
       };
   isRec.value = true;
   console.log('프: RecorderPanel - 녹음 시작');
@@ -233,14 +233,14 @@ async function toggleRec() {
 }
 
 // 캡처 중지 및 WAV Blob 생성
-async function stopRecording() {
+async function stopRec() {
   try {
     if (recorder.value) recorder.value.state = 'inactive';
     // 노드 및 트랙 중지
       // 캡처 노드 및 스트림 정리
-      cleanupCaptureNodes();
+      cleanupCapture();
 
-    stopVolMeter();
+    stopMeter();
 
   // pcmChunks 연결
     let totalLen = 0;
@@ -262,10 +262,10 @@ async function stopRecording() {
       const targetRate = 16000;
       let outputSamples = combined;
       if (origSampleRate !== targetRate) {
-        outputSamples = resampleBuffer(combined, origSampleRate, targetRate);
+        outputSamples = resample(combined, origSampleRate, targetRate);
       }
 
-      const wavView = encodeWAV(outputSamples, targetRate);
+      const wavView = encodeWav(outputSamples, targetRate);
       const wavBlob = new Blob([wavView], { type: 'audio/wav' });
       lastWavBlob.value = wavBlob;
       mimeType.value = 'audio/wav';
@@ -282,18 +282,18 @@ async function stopRecording() {
         resetState();
         return;
       }
-      nameInput.value = `대화록_${new Date().toLocaleString('ko-KR', { hour12: false }).replace(/[.\s:]/g, '-')}`;
+      filenameInput.value = `대화록_${new Date().toLocaleString('ko-KR', { hour12: false }).replace(/[.\s:]/g, '-')}`;
       showNamePrompt.value = true;
       showOpts.value = false;
     }
   } catch (err) {
-    console.error('프: RecorderPanel - stopRecording 오류:', err);
+    console.error('프: RecorderPanel - stopRec 오류:', err);
     resetState();
   }
 }
 
 // 간단 선형 리샘플러(Float32Array)
-function resampleBuffer(buffer, inSampleRate, outSampleRate) {
+function resample(buffer, inSampleRate, outSampleRate) {
   if (inSampleRate === outSampleRate) return buffer;
   const ratio = inSampleRate / outSampleRate;
   const outLength = Math.round(buffer.length / ratio);
@@ -333,7 +333,7 @@ async function confirmSave() {
   }
   console.log('프: RecorderPanel - STT 전송 Blob 크기:', audioBlob.size);
 
-  const filename = nameInput.value.trim() || `대화록_${new Date().toLocaleString("ko-KR").replace(/[:.]/g, "-")}`;
+  const filename = filenameInput.value.trim() || `대화록_${new Date().toLocaleString("ko-KR").replace(/[:.]/g, "-")}`;
 
   isTranscribing.value = true;
   showNamePrompt.value = false;
@@ -384,7 +384,7 @@ function resetState() {
   isRec.value = false;
   showOpts.value = false;
   showNamePrompt.value = false;
-  nameInput.value = "";
+  filenameInput.value = "";
   chunks.value = [];
   isTranscribing.value = false;
   if (stream) {
@@ -392,7 +392,7 @@ function resetState() {
     stream = null;
   }
   recorder.value = null;
-  stopVolMeter();
+  stopMeter();
 }
 
 // 메시지 모달
@@ -413,7 +413,7 @@ function closeMsg() {
 }
 
 // 볼륨 미터 시작
-function startVolMeter(stream, context) {
+function startMeter(stream, context) {
   if (!context) return;
   audioContext = context;
   
@@ -444,7 +444,7 @@ function startVolMeter(stream, context) {
 }
 
 // 볼륨 미터 중지
-function stopVolMeter() {
+function stopMeter() {
   if (animationFrameId) {
     cancelAnimationFrame(animationFrameId);
   }
@@ -459,7 +459,7 @@ function stopVolMeter() {
 }
 
 // Blob -> base64 변환
-async function blobToBase64(blob) {
+async function blobToB64(blob) {
   return await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -477,7 +477,7 @@ async function blobToBase64(blob) {
 }
 
 // 녹음 Blob을 16kHz mono WAV로 변환
-async function convertTo16kHzWav(blob) {
+async function to16kWav(blob) {
   try {
     const arrayBuffer = await blob.arrayBuffer();
   // 짧은 AudioContext로 디코드
@@ -513,18 +513,18 @@ async function convertTo16kHzWav(blob) {
   // 모노 채널 데이터 취득
     const chanData = rendered.getChannelData(0);
   // WAV(16-bit PCM) 인코딩
-    const wavBuffer = encodeWAV(chanData, targetSampleRate);
+  const wavBuffer = encodeWav(chanData, targetSampleRate);
   // 디코더 닫아 자원 해제
   try { decodeCtx.close(); } catch (e) { console.warn('프: RecorderPanel - decodeCtx.close 실패(무시):', e); }
 
     return new Blob([wavBuffer], { type: 'audio/wav' });
   } catch (err) {
-    console.warn('프: RecorderPanel - convertTo16kHzWav 실패:', err);
+    console.warn('프: RecorderPanel - to16kWav 실패:', err);
     throw err;
   }
 }
 
-function encodeWAV(samples, sampleRate) {
+function encodeWav(samples, sampleRate) {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buffer);
 
@@ -568,7 +568,7 @@ async function sendToSTT(audioBlob) {
   // 서버로 일관된 16kHz mono WAV 전송(인코딩/샘플레이트 불일치 방지)
     let sendBlob = audioBlob;
     try {
-      const wavBlob = await convertTo16kHzWav(audioBlob);
+    const wavBlob = await to16kWav(audioBlob);
       if (wavBlob && wavBlob.size > 0) {
         sendBlob = wavBlob;
   // 서버에 sampleRate 메타 전송(변환시 16000)
@@ -601,7 +601,7 @@ async function sendToSTT(audioBlob) {
     }
 
   // FormData 실패시 base64 폴백
-    const base64Audio = await blobToBase64(sendBlob);
+  const base64Audio = await blobToB64(sendBlob);
     const res = await fetch('http://localhost:3001/api/transcribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
