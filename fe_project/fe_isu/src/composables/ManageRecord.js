@@ -49,116 +49,13 @@ export function useRecord() {
   const UP_SRV = true;
 
   onMounted(async () => {
-    try {
-  const idbRecs = await getAll();
-      if (Array.isArray(idbRecs) && idbRecs.length > 0) {
-        idbRecs.forEach(item => {
-          // item.audioBlob: dataURL 문자열, 또는 서버 URL(http 시작), 또는 null
-          let audioBlobOrUrl = item.audioBlob;
-          if (typeof audioBlobOrUrl === 'string' && audioBlobOrUrl.startsWith('data:')) {
-            audioBlobOrUrl = b64ToBlob(audioBlobOrUrl, item.audioType || 'audio/webm');
-          }
-          // 서버 URL이면 audioUrl로 사용
-          records.value.push({
-            id: item.id || newId(),
-            timestamp: item.timestamp,
-            audioBlob: (typeof audioBlobOrUrl === 'string' && audioBlobOrUrl.startsWith('http')) ? null : audioBlobOrUrl,
-            audioUrl: (typeof audioBlobOrUrl === 'string' && audioBlobOrUrl.startsWith('http')) ? audioBlobOrUrl : null,
-            filename: item.filename,
-            transcription: item.transcription || ''
-          });
-        });
-        console.log('프: ManageRecord - IndexedDB에서 로드 완료. 항목 수:', records.value.length);
-        return;
-      }
-
-      // IDB에 기록 없으면 legacy localStorage 확인 후 마이그레이션
-      const storedRecs = JSON.parse(localStorage.getItem('meetingRecordings') || '[]');
-      if (Array.isArray(storedRecs) && storedRecs.length > 0) {
-  console.log('프: ManageRecord - localStorage에서 마이그레이션 시작. 수:', storedRecs.length);
-        for (const item of storedRecs) {
-          if (item.audioBase64 && item.audioType) {
-            const blob = b64ToBlob(item.audioBase64, item.audioType);
-            if (blob) {
-              const rec = {
-                id: item.id || newId(),
-                timestamp: item.timestamp,
-                audioBlob: blob,
-                filename: item.filename,
-                transcription: item.transcription || ''
-              };
-              records.value.push(rec);
-              try {
-                const dataUrl = await blobToUrl(blob);
-                await put({ ...rec, audioBlob: dataUrl, audioType: item.audioType });
-              } catch (e) {
-                console.warn('프: ManageRecord - 마이그레이션 IDB 저장 실패:', e, rec.id);
-              }
-            } else {
-              console.warn('프: ManageRecord - 마이그레이션: Blob 변환 실패 항목:', item);
-            }
-          }
-        }
-  try { localStorage.removeItem('meetingRecordings'); } catch (e) { console.warn('프: ManageRecord - localStorage 제거 실패:', e); }
-  console.log('프: ManageRecord - 마이그레이션 완료. IndexedDB 저장');
-      }
-    } catch (e) {
-      console.error('프: ManageRecord - IndexedDB 로드/마이그레이션 실패:', e);
-    }
+    // 초기 로드 및 레거시 마이그레이션 수행
+    await loadStore();
   });
 
   watch(records, async (newRecs) => {
-    try {
-      for (const rec of newRecs) {
-        let storeAudio = rec.audioBlob;
-        let audioType = null;
-
-          // 서버 업로드가 켜져 있고 Blob이면서 audioUrl 없으면 업로드
-          if (UP_SRV && rec.audioBlob instanceof Blob && !rec.audioUrl) {
-          try {
-            const form = new FormData();
-            form.append('audio', rec.audioBlob, rec.filename || 'recording.webm');
-            const resp = await fetch('/api/upload', { method: 'POST', body: form });
-            if (resp.ok) {
-              const body = await resp.json();
-              // 반환된 URL 저장, 로컬 Blob 제거
-              storeAudio = body.url;
-              audioType = null;
-              rec.audioUrl = body.url;
-              rec.audioBlob = null;
-              console.log('프: ManageRecord - 업로드 성공. URL:', body.url);
-            } else {
-              console.warn('프: ManageRecord - 업로드 실패. 상태:', resp.status);
-            }
-          } catch (e) {
-            console.warn('프: ManageRecord - 업로드 오류:', e);
-          }
-          } else if (rec.audioBlob instanceof Blob) {
-            try {
-            storeAudio = await blobToUrl(rec.audioBlob);
-            audioType = rec.audioBlob.type || null;
-          } catch (e) {
-            console.warn('프: ManageRecord - blob->dataUrl 변환 실패:', e, rec.id);
-            storeAudio = null;
-          }
-        }
-
-        const storeObj = {
-          id: rec.id,
-          timestamp: rec.timestamp,
-          filename: rec.filename,
-          transcription: rec.transcription,
-          audioBlob: storeAudio,
-          audioType: audioType
-        };
-
-  await put(storeObj);
-  
-  console.log(`프: ManageRecord - IndexedDB 저장/갱신 ID: ${rec.id}`);
-      }
-    } catch (e) {
-      console.error('프: ManageRecord - IndexedDB 저장 실패:', e);
-    }
+    // 변경된 레코드들을 저장
+    await saveRecs(newRecs);
   }, { deep: true });
 
   // 디버그 헬퍼: 브라우저 콘솔에서 IDB 검사/제거용
@@ -192,6 +89,117 @@ export function useRecord() {
   // eslint-disable-next-line no-console
   console.warn('프: ManageRecord - 디버그 헬퍼 등록 실패:', e);
   }
+
+  // -------------------- 헬퍼 함수들 (로직 단순화 목적) --------------------
+
+  // IDB에서 로드하거나 legacy localStorage에서 마이그레이션 수행
+  async function loadStore() {
+    try {
+      const idbRecs = await getAll();
+      if (Array.isArray(idbRecs) && idbRecs.length > 0) {
+        idbRecs.forEach(item => {
+          let audioBlobOrUrl = item.audioBlob;
+          if (typeof audioBlobOrUrl === 'string' && audioBlobOrUrl.startsWith('data:')) {
+            audioBlobOrUrl = b64ToBlob(audioBlobOrUrl, item.audioType || 'audio/webm');
+          }
+          records.value.push({
+            id: item.id || newId(),
+            timestamp: item.timestamp,
+            audioBlob: (typeof audioBlobOrUrl === 'string' && audioBlobOrUrl.startsWith('http')) ? null : audioBlobOrUrl,
+            audioUrl: (typeof audioBlobOrUrl === 'string' && audioBlobOrUrl.startsWith('http')) ? audioBlobOrUrl : null,
+            filename: item.filename,
+            transcription: item.transcription || ''
+          });
+        });
+        console.log('프: ManageRecord - IndexedDB 로드. 항목 수:', records.value.length);
+        return;
+      }
+
+      // 레거시 localStorage 마이그레이션
+      const storedRecs = JSON.parse(localStorage.getItem('meetingRecordings') || '[]');
+      if (!Array.isArray(storedRecs) || storedRecs.length === 0) return;
+  console.log('프: ManageRecord - localStorage 마이그레이션 시작. 수:', storedRecs.length);
+      for (const item of storedRecs) {
+        if (!item.audioBase64 || !item.audioType) continue;
+        const blob = b64ToBlob(item.audioBase64, item.audioType);
+        if (!blob) {
+          console.warn('프: ManageRecord - 마이그레이션: Blob 변환 실패 항목:', item);
+          continue;
+        }
+        const rec = {
+          id: item.id || newId(),
+          timestamp: item.timestamp,
+          audioBlob: blob,
+          filename: item.filename,
+          transcription: item.transcription || ''
+        };
+        records.value.push(rec);
+        try {
+          const dataUrl = await blobToUrl(blob);
+          await put({ ...rec, audioBlob: dataUrl, audioType: item.audioType });
+        } catch (e) {
+          console.warn('프: ManageRecord - 마이그레이션 IDB 저장 실패:', e, rec.id);
+        }
+      }
+      try { localStorage.removeItem('meetingRecordings'); } catch (e) { console.warn('프: ManageRecord - localStorage 제거 실패:', e); }
+      console.log('프: ManageRecord - 마이그레이션 완료');
+    } catch (e) {
+      console.error('프: ManageRecord - IndexedDB 로드/마이그레이션 실패:', e);
+    }
+  }
+
+  // 레코드 배열을 IndexedDB에 저장(업로드 포함)
+  async function saveRecs(newRecs) {
+    try {
+      for (const rec of newRecs) {
+        let storeAudio = rec.audioBlob;
+        let audioType = null;
+
+        if (UP_SRV && rec.audioBlob instanceof Blob && !rec.audioUrl) {
+          try {
+            const form = new FormData();
+            form.append('audio', rec.audioBlob, rec.filename || 'recording.webm');
+            const resp = await fetch('/api/upload', { method: 'POST', body: form });
+            if (resp.ok) {
+              const body = await resp.json();
+              storeAudio = body.url;
+              audioType = null;
+              rec.audioUrl = body.url;
+              rec.audioBlob = null;
+              console.log('프: ManageRecord - 업로드 성공. URL:', body.url);
+            } else {
+              console.warn('프: ManageRecord - 업로드 실패. 상태:', resp.status);
+            }
+          } catch (e) {
+            console.warn('프: ManageRecord - 업로드 오류:', e);
+          }
+        } else if (rec.audioBlob instanceof Blob) {
+          try {
+            storeAudio = await blobToUrl(rec.audioBlob);
+            audioType = rec.audioBlob.type || null;
+          } catch (e) {
+            console.warn('프: ManageRecord - blob->dataUrl 변환 실패:', e, rec.id);
+            storeAudio = null;
+          }
+        }
+
+        const storeObj = {
+          id: rec.id,
+          timestamp: rec.timestamp,
+          filename: rec.filename,
+          transcription: rec.transcription,
+          audioBlob: storeAudio,
+          audioType: audioType
+        };
+
+        await put(storeObj);
+        console.log(`프: ManageRecord - IDB 저장: ${rec.id}`);
+      }
+    } catch (e) {
+      console.error('프: ManageRecord - IndexedDB 저장 실패:', e);
+    }
+  }
+
 
   function addRec(data) {
     const { audioBlob, filename, transcription } = data;
