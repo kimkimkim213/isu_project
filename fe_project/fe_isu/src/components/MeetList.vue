@@ -12,12 +12,12 @@
           v-if="editMeetId === meet.id"
           type="text"
           v-model="editName"
-          @keyup.enter="saveEditName(meet.id)"
-            @blur="saveEditName(meet.id)"
+          @keyup.enter="saveRename(meet.id)"
+            @blur="saveRename(meet.id)"
           class="filename-edit-input"
         />
         <!-- 제목 눌러서 파일명 수정 -->
-  <div v-else @click="startEditName(meet)" class="editable-title-area">
+  <div v-else @click="startRename(meet)" class="editable-title-area">
           <h3>{{ meet.title }}</h3>
           <p>{{ meet.date }}</p>
         </div>
@@ -44,14 +44,14 @@
         <!--미리보기 -->
         <button
           class="action-button text-preview"
-          @click="showTxt(meet)"
+          @click="viewText(meet)"
         >
           텍스트
         </button>
         <!-- 삭제 -->
         <button
           class="action-button delete"
-          @click="confirmDel(meet.id, meet.title)"
+          @click="confirmDelete(meet.id, meet.title)"
         >
           삭제
         </button>
@@ -60,15 +60,15 @@
     <p v-if="meets.length === 0" class="no-meetings-message">저장된 대화가 없습니다.</p>
 
     <!-- 삭제 확인, 정보 메시지  -->
-    <div v-if="showMsg" class="message-modal-overlay">
+  <div v-if="showMsgVisible" class="message-modal-overlay">
       <div class="message-modal-content">
         <h3>{{ msgTitle }}</h3>
         <p>{{ msgContent }}</p>
         <div class="modal-buttons" v-if="msgType === 'confirmDelete'">
-            <button @click="execDel" class="confirm-button"> 삭제</button>
-            <button @click="closeMsgModal" class="cancel-button">취소</button>
+            <button @click="deleteRec" class="confirm-button"> 삭제</button>
+            <button @click="closeMsg" class="cancel-button">취소</button>
         </div>
-        <button v-else @click="closeMsgModal" class="ok-button">확인</button>
+        <button v-else @click="closeMsg" class="ok-button">확인</button>
       </div>
     </div>
 
@@ -98,7 +98,7 @@
             <p>{{ currentTxt }}</p>
           </div>
           <div class="modal-buttons">
-            <button class="prompt-button download" @click="downTxtFile">
+            <button class="prompt-button download" @click="downloadTxt">
               파일로 다운로드 (.txt)
             </button>
           </div>
@@ -147,8 +147,8 @@ export default {
     return {
       meets: [],
       editMeetId: null,
-      editName: '',
-      showMsg: false,
+  editName: '',
+  showMsgVisible: false,
       msgTitle: '',
       msgContent: '',
       msgType: '',
@@ -203,22 +203,22 @@ export default {
     },
     
     // 삭제 확인창
-  confirmDel(id, title) {
+  confirmDelete(id, title) {
         this.delId = id;
-        this.showMsgModal('녹음본 삭제', `'${title}' 녹음본을 삭제하시겠습니까?`, 'confirmDelete');
+        this.showMsg('녹음본 삭제', `'${title}' 녹음본을 삭제하시겠습니까?`, 'confirmDelete');
     },
 
-    // 삭제 실행
-    execDel() {
-        if (this.delId) {
-            this.$emit('delRec', this.delId);
-            this.closeMsgModal();
-            this.showMsgModal('삭제 완료', '녹음본이 삭제되었습니다.');
-        }
-    },
+  // 삭제 실행
+  deleteRec() {
+    if (this.delId) {
+      this.$emit('delRec', this.delId);
+      this.closeMsg();
+      this.showMsg('삭제 완료', '녹음본이 삭제되었습니다.');
+    }
+  },
 
     // 이름 편집 시작
-    startEditName(meet) {
+    startRename(meet) {
       if (this.editMeetId === meet.id) return;
       this.editMeetId = meet.id;
       this.editName = meet.title;
@@ -229,25 +229,25 @@ export default {
     },
 
     // 이름 편집 저장
-    saveEditName(id) {
+    saveRename(id) {
       if (this.editMeetId !== id) return;
       const original = this.meets.find(m => m.id === id);
       const origName = original ? original.title : '';
       const newName = this.editName.trim();
       if (newName === '') {
-        this.showMsgModal('이름 변경 실패', '파일 이름은 비울 수 없습니다.');
+        this.showMsg('이름 변경 실패', '파일 이름은 비울 수 없습니다.');
         this.editName = origName; this.editMeetId = null; return;
       }
       if (newName === origName) { this.editMeetId = null; return; }
       this.$emit('updateRecName', { id: id, newName: newName });
       this.editMeetId = null;
-      this.showMsgModal('이름 변경 완료', `녹음본 이름이 '${newName}'(으)로 변경되었습니다.`);
+      this.showMsg('이름 변경 완료', `녹음본 이름이 '${newName}'(으)로 변경되었습니다.`);
     },
 
     // 텍스트 보기
-    showTxt(meet) {
+    viewText(meet) {
       if (!meet.transcription || meet.transcription === '텍스트 변환 결과 없음' || meet.transcription.trim() === '') {
-        this.showMsgModal('텍스트 없음', '변환된 텍스트가 없습니다.');
+        this.showMsg('텍스트 없음', '변환된 텍스트가 없습니다.');
         return;
       }
       this.currentMeet = meet;
@@ -263,9 +263,9 @@ export default {
     },
 
     // 텍스트 파일 다운
-    downTxtFile() {
+    downloadTxt() {
       if (!this.currentTxt) {
-        this.showMsgModal('다운로드 오류', '다운로드할 텍스트 내용이 없습니다.');
+        this.showMsg('다운로드 오류', '다운로드할 텍스트 내용이 없습니다.');
         return;
       }
 
@@ -277,7 +277,7 @@ export default {
       link.click();
       URL.revokeObjectURL(link.href);
       
-      this.showMsgModal('다운로드 완료', `'${this.currentTxtName}' 텍스트 파일이 다운로드되었습니다.`);
+      this.showMsg('다운로드 완료', `'${this.currentTxtName}' 텍스트 파일이 다운로드되었습니다.`);
     },
 
     // 텍스트 모달 닫기
@@ -299,15 +299,15 @@ export default {
     },
 
     // 메시지 창 표시
-    showMsgModal(title, content, type = 'info') {
+    showMsg(title, content, type = 'info') {
       this.msgTitle = title;
       this.msgContent = content;
       this.msgType = type;
-      this.showMsg = true;
+      this.showMsgVisible = true;
     },
 
-    closeMsgModal() {
-      this.showMsg = false;
+    closeMsg() {
+      this.showMsgVisible = false;
       this.msgTitle = '';
       this.msgContent = '';
       this.msgType = '';

@@ -2,8 +2,8 @@
 import { ref, watch, onMounted } from 'vue';
 import { getAll, put, del } from '@/utils/idb.js';
 
-// Blob -> Data URL 변환 (예: data:audio/webm;base64,...)
-async function blobToDataUrl(blob) {
+// Blob -> dataURL 변환 (예: data:audio/webm;base64,...)
+async function blobToUrl(blob) {
   return await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => resolve(reader.result);
@@ -46,7 +46,7 @@ function newId() {
 export function useRecord() {
   const records = ref([]);
   // 환경: 서버 업로드 여부 (true면 서버에 저장하고 URL 사용)
-  const UPLOAD_TO_SERVER = true;
+  const UP_SRV = true;
 
   onMounted(async () => {
     try {
@@ -89,7 +89,7 @@ export function useRecord() {
               };
               records.value.push(rec);
               try {
-                const dataUrl = await blobToDataUrl(blob);
+                const dataUrl = await blobToUrl(blob);
                 await put({ ...rec, audioBlob: dataUrl, audioType: item.audioType });
               } catch (e) {
                 console.warn('프: ManageRecord - 마이그레이션 IDB 저장 실패:', e, rec.id);
@@ -114,7 +114,7 @@ export function useRecord() {
         let audioType = null;
 
           // 서버 업로드가 켜져 있고 Blob이면서 audioUrl 없으면 업로드
-        if (UPLOAD_TO_SERVER && rec.audioBlob instanceof Blob && !rec.audioUrl) {
+          if (UP_SRV && rec.audioBlob instanceof Blob && !rec.audioUrl) {
           try {
             const form = new FormData();
             form.append('audio', rec.audioBlob, rec.filename || 'recording.webm');
@@ -133,9 +133,9 @@ export function useRecord() {
           } catch (e) {
             console.warn('프: ManageRecord - 업로드 오류:', e);
           }
-        } else if (rec.audioBlob instanceof Blob) {
-          try {
-            storeAudio = await blobToDataUrl(rec.audioBlob);
+          } else if (rec.audioBlob instanceof Blob) {
+            try {
+            storeAudio = await blobToUrl(rec.audioBlob);
             audioType = rec.audioBlob.type || null;
           } catch (e) {
             console.warn('프: ManageRecord - blob->dataUrl 변환 실패:', e, rec.id);
@@ -163,19 +163,18 @@ export function useRecord() {
 
   // 디버그 헬퍼: 브라우저 콘솔에서 IDB 검사/제거용
   try {
-  // IndexedDB 모든 레코드 출력: 콘솔에서 __isu_dumpIdb() 호출
+  // IndexedDB 헬퍼: 콘솔에서 호출해 검사/삭제 가능
   window.__isu_dumpIdb = async () => {
       try {
         const recs = await getAll();
   console.log('IndexedDB 레코드:', recs);
         return recs;
       } catch (e) {
-        console.error('IDB dump failed:', e);
+        console.error('프: ManageRecord - IDB 덤프 실패:', e);
         throw e;
       }
     };
 
-  // IndexedDB 모든 레코드 삭제: 콘솔에서 __isu_clearIdb() 호출
   window.__isu_clearIdb = async () => {
       try {
         const recs = await getAll();
@@ -184,7 +183,7 @@ export function useRecord() {
         }
   console.log('IndexedDB 삭제 완료. 제거 수:', recs.length);
       } catch (e) {
-        console.error('IDB clear failed:', e);
+        console.error('프: ManageRecord - IDB 삭제 실패:', e);
         throw e;
       }
     };

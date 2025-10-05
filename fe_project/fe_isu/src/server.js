@@ -58,6 +58,12 @@ app.post('/api/summarize', async (req, res) => {
 // /api/transcribe: form-data(audio) 우선 처리, 없으면 base64 JSON 처리
 app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
   try {
+    const startTime = Date.now();
+    // Basic request metadata
+    const contentType = req.headers['content-type'] || '';
+    const contentLength = req.get('content-length') || '';
+    console.log('백: /api/transcribe 요청 수신 - content-type:', contentType, 'content-length:', contentLength);
+
     let audioBuffer = null;
     let sampleRate = null;
     let mimeType = null;
@@ -68,12 +74,16 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
       mimeType = req.file.mimetype || 'audio/webm';
       try {
         audioBuffer = fs.readFileSync(fp);
+        console.log('백: 업로드된 파일 읽음:', fp);
+        console.log('백: 파일 메타 - originalname:', req.file.originalname, 'mimetype:', mimeType, 'size:', audioBuffer.length);
+        // Log first 64 bytes for quick inspection (hex)
+  try { console.log('백: 파일 바이트(선두 64 바이트, hex):', audioBuffer.slice(0, 64).toString('hex')); } catch (e) { console.warn('백: 파일 바이트 출력 실패(무시):', e && e.message ? e.message : e); }
       } catch (e) {
         console.error('백: 업로드 파일 읽기 오류:', e);
         return res.status(500).json({ error: '파일 처리 실패', details: e.message });
       } finally {
         // 업로드된 파일 즉시 삭제(임시 저장)
-        try { fs.unlinkSync(fp); } catch (e) { /* 무시 */ }
+    try { fs.unlinkSync(fp); } catch (e) { console.warn('백: 업로드 임시파일 삭제 실패(무시):', e && e.message ? e.message : e); }
       }
       sampleRate = req.body.sampleRate ? Number(req.body.sampleRate) : 16000;
     } else {
@@ -83,6 +93,8 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
         return res.status(400).json({ error: '필수 정보(audio, sampleRate, mimeType)가 누락되었습니다.' });
       }
       audioBuffer = Buffer.from(base64Audio, 'base64');
+      console.log('백: base64로 수신 - mimeType:', mt, 'base64_len:', base64Audio.length, 'buffer_bytes:', audioBuffer.length);
+  try { console.log('백: base64 오디오 바이트(선두 64 바이트, hex):', audioBuffer.slice(0,64).toString('hex')); } catch (e) { console.warn('백: base64 바이트 출력 실패(무시):', e && e.message ? e.message : e); }
       sampleRate = sr;
       mimeType = mt;
     }
@@ -116,14 +128,21 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     };
 
     console.log('백: Google 전송 설정:', JSON.stringify(config, null, 2));
-
+    // Measure time to call Google
+    const callStart = Date.now();
     const [response] = await speechClient.recognize({ audio, config });
+    const callDur = Date.now() - callStart;
 
-    console.log('백: Google STT 응답:', JSON.stringify(response, null, 2));
+    console.log('백: Google STT 호출 완료 (ms):', callDur);
+  try { console.log('백: Google STT 응답 요약:', JSON.stringify(response, ['results','alternatives','transcript'], 2).slice(0,2000)); } catch (e) { console.warn('백: STT 응답 요약 출력 실패(무시):', e && e.message ? e.message : e); }
 
-    const transcription = response.results
-      .map(result => result.alternatives[0].transcript)
+    const transcription = (response.results || [])
+      .map(result => (result.alternatives && result.alternatives[0]) ? result.alternatives[0].transcript : '')
+      .filter(t => t)
       .join('\n');
+
+    const totalDur = Date.now() - startTime;
+    console.log('백: 전사 완료 — 전사문자 길이:', transcription.length, '처리시간(ms):', totalDur);
 
     res.json({ transcription });
   } catch (error) {

@@ -145,7 +145,6 @@ async function toggleRec() {
       // Prepare to capture PCM directly (AudioWorklet preferred)
       pcmChunks = [];
       lastWavBlob.value = null;
-      const audioTracks = stream.getAudioTracks();
       sourceNode = audioContext.createMediaStreamSource(stream);
 
       // Try AudioWorklet first
@@ -212,24 +211,24 @@ async function stopRecording() {
     if (recorder.value) recorder.value.state = 'inactive';
     // stop nodes and tracks
     try {
-      if (workletNode) {
-        try { workletNode.port.close(); } catch (e) {}
-        try { workletNode.disconnect(); } catch (e) {}
+        if (workletNode) {
+        try { workletNode.port.close(); } catch (e) { console.warn('프: RecorderPanel - worklet port close 에러(무시):', e); }
+        try { workletNode.disconnect(); } catch (e) { console.warn('프: RecorderPanel - worklet disconnect 에러(무시):', e); }
         workletNode = null;
       }
       if (scriptNode) {
-        try { scriptNode.disconnect(); } catch (e) {}
+        try { scriptNode.disconnect(); } catch (e) { console.warn('프: RecorderPanel - scriptNode disconnect 에러(무시):', e); }
         scriptNode = null;
       }
       if (sourceNode) {
-        try { sourceNode.disconnect(); } catch (e) {}
+        try { sourceNode.disconnect(); } catch (e) { console.warn('프: RecorderPanel - sourceNode disconnect 에러(무시):', e); }
         sourceNode = null;
       }
       if (stream) {
         stream.getTracks().forEach((t) => t.stop());
         stream = null;
       }
-    } catch (e) { console.warn('프: RecorderPanel - stop nodes error', e); }
+  } catch (e) { console.warn('프: RecorderPanel - stop nodes error', e); }
 
     stopVolMeter();
 
@@ -506,7 +505,7 @@ async function convertTo16kHzWav(blob) {
     // Encode WAV (16-bit PCM)
     const wavBuffer = encodeWAV(chanData, targetSampleRate);
     // Close decoders to free resources
-    try { decodeCtx.close(); } catch (e) {}
+  try { decodeCtx.close(); } catch (e) { console.warn('프: RecorderPanel - decodeCtx.close 실패(무시):', e); }
 
     return new Blob([wavBuffer], { type: 'audio/wav' });
   } catch (err) {

@@ -27,8 +27,8 @@
       <MeetList 
         v-else 
         :records="records" 
-        @delRec="onRecDel"
-        @updateRecName="onRecNameUpdate"
+        @delRec="onRecDelete"
+        @updateRecName="onRecRename"
         :is-summarizing="isSum"
         :summarizing-meeting-id="sumMeetId"
         :summary-text="sumText"
@@ -50,20 +50,14 @@ const tab = ref('current')
 
 const { records, addRec, delRec, updateRecName } = useRecord()
 
-// RecorderPanel에서 녹음 완료 시
-function onRecFinish(data) {
-  addRec(data)
-}
+// 녹음 완료 처리
+function onRecFinish(data) { addRec(data) }
 
-// MeetList에서 삭제 시
-function onRecDel(id) {
-  delRec(id)
-}
+// 삭제 처리
+function onRecDelete(id) { delRec(id) }
 
-// MeetList에서 이름 변경 시
-function onRecNameUpdate(data) {
-  updateRecName(data)
-}
+// 이름 변경 처리
+function onRecRename(data) { updateRecName(data) }
 
 // 요약 관련 상태 변수
 const isSum = ref(false);
