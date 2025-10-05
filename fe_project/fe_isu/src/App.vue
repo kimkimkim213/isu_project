@@ -7,14 +7,14 @@
         </div>
         <nav class="tabs">
           <button
-            :class="['tab-button', activeTab === 'current' ? 'active' : '']"
-            @click="activeTab = 'current'"
+            :class="['tab-button', tab === 'current' ? 'active' : '']"
+            @click="tab = 'current'"
           >
             회의 시작
           </button>
           <button
-            :class="['tab-button', activeTab === 'past' ? 'active' : '']"
-            @click="activeTab = 'past'"
+            :class="['tab-button', tab === 'past' ? 'active' : '']"
+            @click="tab = 'past'"
           >
             지난 회의
           </button>
@@ -22,110 +22,93 @@
       </div>
     </header>
     
-
-
     <main class="main-content">
-    <RecorderPanel v-if="activeTab === 'current'" @recording-finished="onRecordingFinished" />
-            <PastMeetingList 
+      <RecorderPanel v-if="tab === 'current'" @recording-finished="onRecFinish" />
+      <MeetList 
         v-else 
-        :recordings="recordings" 
-        @delete-recording="deleteRecordingById"
-        @update-recording-filename="renameRecording"
-        :is-summarizing="isSummarizing"
-        :summarizing-meeting-id="summarizingMeetingId"
-        :summary-text="summaryText"
-        :show-summary="showSummary"
-        @request-summary="requestSummary"
-        @close-summary="closeSummary"
+        :records="records" 
+        @delRec="onRecDelete"
+        @updateRecName="onRecRename"
+        :is-summarizing="isSum"
+        :summarizing-meeting-id="sumMeetId"
+        :summary-text="sumText"
+        :show-summary="showSum"
+        @reqSum="onSumReq"
+        @closeSum="onSumClose"
       />
-      
     </main>
   </div>
-  
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import RecorderPanel from '@/components/RecorderPanel.vue'
-import PastMeetingList from '@/components/PastMeetingList.vue'
-import { useRecs, fetchWithTimeout, DEFAULT_FETCH_TIMEOUT, base64ToBlob } from '@/conposable';
+import MeetList from '@/components/MeetList.vue'
+import { useRecord } from '@/composables/ManageRecord.js'
 
-// use centralized recordings composable
-const { recordings, addRecording, deleteRecording, updateRecordingFilename } = useRecs();
+const tab = ref('current')
 
-const activeTab = ref('current')
+const { records, addRec, delRec, updateRecName } = useRecord()
 
-// 녹음 완료 이벤트 처리
-function onRecordingFinished(data) {
-  const { audioBlob, filename, transcription } = data;
-  addRecording({ audioBlob, filename, transcription });
-}
+// 녹음 완료 처리
+function onRecFinish(data) { addRec(data) }
 
-// 지난회의목록 녹음본 삭제 처리
-function deleteRecordingById(idtodelete) { deleteRecording(idtodelete); }
+// 삭제 처리
+function onRecDelete(id) { delRec(id) }
 
-// 지난회의목록 이름 변경 처리
-function renameRecording(payload) { updateRecordingFilename(payload); }
+// 이름 변경 처리
+function onRecRename(data) { updateRecName(data) }
 
-// 녹음본 상태변수들
-const isSummarizing = ref(false);
-const summarizingMeetingId = ref(null);
-const summaryText = ref('');
-const showSummary = ref(false);
+// 요약 관련 상태 변수
+const isSum = ref(false);
+const sumMeetId = ref(null);
+const sumText = ref('');
+const showSum = ref(false);
 
-// 지난회의 요약 요청
-async function requestSummary(meeting) {
+// 요약 요청
+async function onSumReq(meeting) {
   if (!meeting || !meeting.transcription || meeting.transcription.trim() === '') {
-    console.warn('요약할 텍스트가 없습니다.');
+  console.warn('프: App - 요약 텍스트 없음');
     return;
   }
-  isSummarizing.value = true;
-  summarizingMeetingId.value = meeting.id;
-  summaryText.value = '';
-  showSummary.value = false;
+  isSum.value = true;
+  sumMeetId.value = meeting.id;
+  sumText.value = '';
+  showSum.value = false;
 
   try {
-    const res = await fetchWithTimeout('http://localhost:3001/api/summarize', {
+    const response = await fetch('http://localhost:3001/api/summarize', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({ text: meeting.transcription }),
-    }, DEFAULT_FETCH_TIMEOUT);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || '요약 API 호출 실패');
-    summaryText.value = data.summary;
-    showSummary.value = true;
-    console.log('요약 완료:', data.summary);
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || '요약 API 실패');
+    }
+    const data = await response.json();
+    sumText.value = data.summary;
+    showSum.value = true;
+  console.log('프: App - 요약 완료');
+
   } catch (error) {
-    console.error('요약 중 오류:', error);
-    summaryText.value = `요약 실패: ${error.message}`;
-    showSummary.value = true;
+  console.error('프: App - 요약 오류:', error);
+    sumText.value = `요약 실패: ${error.message}`;
+    showSum.value = true;
   } finally {
-    isSummarizing.value = false;
-    summarizingMeetingId.value = null;
+    isSum.value = false;
+    sumMeetId.value = null;
   }
 }
 
-// 요약화면 닫히면 데이터 초기화
-function closeSummary() { showSummary.value = false; summaryText.value = ''; }
-
-// onMounted: try to hydrate any base64 audio from localStorage into recordings' audioBlob for playback
-onMounted(() => {
-  try {
-    const stored = JSON.parse(localStorage.getItem('meetingRecordings') || '[]');
-    // small timeout to allow composable to populate meta
-    setTimeout(() => {
-      for (const item of stored) {
-        if (item.id && item.audioBase64) {
-          const blob = base64ToBlob(item.audioBase64, item.audioType || undefined);
-          if (blob) {
-            const target = recordings.value.find(r => r.id === item.id);
-            if (target) target.audioBlob = blob;
-          }
-        }
-      }
-    }, 0);
-  } catch (e) { /* ignore parse errors */ }
-});
+// 요약 닫기
+function onSumClose() {
+  showSum.value = false;
+  sumText.value = '';
+}
 </script>
 
 <style>
@@ -149,9 +132,6 @@ body {
   background-color: #fff;
   color: #333;
 }
-
-
-
 
 .header-bar {
   position: fixed;
@@ -232,8 +212,6 @@ body {
 .tab-button.active {
   color: #fff;
 }
-
-
 
 .main-content {
   flex: 1;
