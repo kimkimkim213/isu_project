@@ -16,7 +16,7 @@ defineProps({
   show: { type: Boolean, default: false },
   title: { type: String, default: '' },
   content: { type: String, default: '' },
-  type: { type: String, default: 'info' } // 'info' or 'confirm'
+  type: { type: String, default: 'info' } // 'info' 또는 'confirm'
 });
 defineEmits(['close', 'confirm']);
 </script>

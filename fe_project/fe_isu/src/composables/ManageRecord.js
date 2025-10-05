@@ -2,7 +2,7 @@
 import { ref, watch, onMounted } from 'vue';
 import { getAll, put, del } from '@/utils/idb.js';
 
-// Blob -> dataURL 변환 (예: data:audio/webm;base64,...)
+// Blob -> dataURL 변환
 async function blobToUrl(blob) {
   return await new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -45,22 +45,21 @@ function newId() {
 
 export function useRecord() {
   const records = ref([]);
-  // 환경: 서버 업로드 여부 (true면 서버에 저장하고 URL 사용)
+  // 서버 업로드 여부(UP_SRV true면 URL 사용)
   const UP_SRV = true;
 
   onMounted(async () => {
-    // 초기 로드 및 레거시 마이그레이션 수행
+  // 초기 로드 및 레거시 마이그레이션
     await loadStore();
   });
 
   watch(records, async (newRecs) => {
-    // 변경된 레코드들을 저장
+  // 변경된 레코드 저장
     await saveRecs(newRecs);
   }, { deep: true });
 
-  // 디버그 헬퍼: 브라우저 콘솔에서 IDB 검사/제거용
+  // 디버그 헬퍼: 콘솔에서 IDB 검사/삭제 가능
   try {
-  // IndexedDB 헬퍼: 콘솔에서 호출해 검사/삭제 가능
   window.__isu_dumpIdb = async () => {
       try {
         const recs = await getAll();
@@ -85,14 +84,14 @@ export function useRecord() {
       }
     };
   } catch (e) {
-  // 일부 환경(window 없음)에서는 무시
-  // eslint-disable-next-line no-console
-  console.warn('프: ManageRecord - 디버그 헬퍼 등록 실패:', e);
+    // window 없는 환경 무시
+    // eslint-disable-next-line no-console
+    console.warn('프: ManageRecord - 디버그 헬퍼 등록 실패:', e);
   }
 
-  // -------------------- 헬퍼 함수들 (로직 단순화 목적) --------------------
+  // -------------------- 헬퍼 함수들 --------------------
 
-  // IDB에서 로드하거나 legacy localStorage에서 마이그레이션 수행
+  // IDB 로드 또는 localStorage 마이그레이션
   async function loadStore() {
     try {
       const idbRecs = await getAll();
@@ -115,7 +114,7 @@ export function useRecord() {
         return;
       }
 
-      // 레거시 localStorage 마이그레이션
+  // 레거시 localStorage 마이그레이션
       const storedRecs = JSON.parse(localStorage.getItem('meetingRecordings') || '[]');
       if (!Array.isArray(storedRecs) || storedRecs.length === 0) return;
   console.log('프: ManageRecord - localStorage 마이그레이션 시작. 수:', storedRecs.length);
@@ -148,7 +147,7 @@ export function useRecord() {
     }
   }
 
-  // 레코드 배열을 IndexedDB에 저장(업로드 포함)
+  // 레코드 배열을 IDB에 저장(업로드 포함)
   async function saveRecs(newRecs) {
     try {
       for (const rec of newRecs) {
@@ -223,7 +222,7 @@ export function useRecord() {
   console.log('프: ManageRecord - delRec 호출. ID:', delId);
     records.value = records.value.filter(rec => rec.id !== delId);
   console.log('프: ManageRecord - 삭제 후 총:', records.value.length);
-    // remove from IndexedDB as well
+  // IndexedDB에서도 삭제
     try {
       del(delId).then(() => console.log('프: ManageRecord - IndexedDB 삭제 완료:', delId)).catch(e => console.warn('프: ManageRecord - IndexedDB 삭제 실패:', e));
     } catch (e) { console.warn('프: ManageRecord - del 실패:', e); }

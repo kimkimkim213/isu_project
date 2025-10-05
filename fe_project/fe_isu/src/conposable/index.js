@@ -1,7 +1,7 @@
-// composable 바렐 대신 단일 파일로 통합: 오디오 미터, 녹음 메타 관리, 작은 변환 유틸 포함
+// 오디오 미터·녹음 메타·유틸 통합 composable
 import { ref, onMounted, onUnmounted } from 'vue';
 
-// --------------------- utils ---------------------
+// --------------------- 유틸 ---------------------
 export async function blobToBase64(blob) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -11,8 +11,8 @@ export async function blobToBase64(blob) {
   });
 }
 
-// fetch 타임아웃 헬퍼 (AbortController 래퍼)
-// 기본 fetch 타임아웃을 상수로 중앙화
+// fetch 타임아웃 헬퍼
+// 기본 타임아웃 상수
 export const DEFAULT_FETCH_TIMEOUT = 20000;
 
 export async function fetchWithTimeout(url, opts = {}, timeout = DEFAULT_FETCH_TIMEOUT) {
@@ -38,7 +38,7 @@ export function base64ToBlob(base64, fallbackMime) {
   return new Blob([arr], { type: mime });
 }
 
-// --------------------- audio meter ---------------------
+// --------------------- 볼륨 미터 ---------------------
 const shared = { ctx: null, analyser: null, data: null, src: null, raf: null };
 export function useAudioMeter() {
   const volume = ref(0);
@@ -93,7 +93,7 @@ function gid() { return Date.now().toString(36) + Math.random().toString(36).sli
 
 export function useRecs() {
   const recordings = ref([]);
-  // 저장 타이머 제거: 변경시 즉시 저장하도록 단순화
+  // 저장 타이머 제거, 변경 시 즉시 저장
   onMounted(async () => {
     try {
       const meta = getMeta();
@@ -103,10 +103,10 @@ export function useRecs() {
     }
   });
 
-  // 더 이상 watch+debounce 사용하지 않음; 변경 시 즉시 저장
+  // watch+debounce 제거, 즉시 저장
   onUnmounted(() => {});
 
-  // 메타를 localStorage에 저장하는 헬퍼
+  // 메타를 localStorage에 저장
   function saveMeta(recs) {
     const meta = recs.map(r => ({
       id: r.id,
@@ -117,7 +117,7 @@ export function useRecs() {
     localStorage.setItem(RECORDINGS_STORAGE_KEY, JSON.stringify(meta));
   }
 
-  // localStorage에서 메타를 안전히 읽어 반환
+  // localStorage에서 메타 안전히 읽음
   function getMeta() {
     try {
       return JSON.parse(localStorage.getItem(RECORDINGS_STORAGE_KEY) || '[]');
@@ -143,11 +143,10 @@ export function useRecs() {
     try { saveMeta(recordings.value); } catch (e) { console.error('ManageRecord: save failed', e); }
   }
   function renameRecording({ id, newFilename }) { recordings.value = recordings.value.map(r => r.id === id ? { ...r, filename: newFilename } : r); try { saveMeta(recordings.value); } catch (e) { console.error('ManageRecord: save failed', e); } }
-  // backward-compatible alias
+  // 하위호환별칭
   const updateRecordingFilename = renameRecording;
   return { recordings, addRecording, deleteRecording, renameRecording, updateRecordingFilename };
 }
 
-// default export not used; named exports provided above
-// This file is an integrated composable (audio meter, recordings, utils).
-// No external re-exports required.
+// 명명된 내보내기 사용, 기본 export 없음
+// 통합 composable 파일

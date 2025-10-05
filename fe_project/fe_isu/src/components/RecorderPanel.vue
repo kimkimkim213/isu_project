@@ -72,9 +72,9 @@ import { ref } from "vue";
 const showNamePrompt = ref(false);
 const nameInput = ref("");
 const isRec = ref(false);
-const recorder = ref(null); // will be a small controller { state, stop }
-const chunks = ref([]); // legacy: kept for compatibility but not used for primary WAV
-let pcmChunks = []; // Float32Array pieces collected from worklet/scriptprocessor
+const recorder = ref(null); // 소형 컨트롤러 {state, stop}
+const chunks = ref([]); // 레거시 호환용(주 사용 아님)
+let pcmChunks = []; // worklet/scriptprocessor에서 수집된 Float32Array
 const lastWavBlob = ref(null);
 const emit = defineEmits(["recording-finished"]);
 
@@ -208,7 +208,7 @@ async function toggleRec() {
       sampleRate.value = audioContext.sampleRate;
   console.log('프: RecorderPanel - 샘플레이트:', sampleRate.value);
       startVolMeter(stream, audioContext);
-      // Prepare to capture PCM directly (AudioWorklet preferred)
+  // PCM 직접 캡처 준비(AudioWorklet 우선)
       pcmChunks = [];
       lastWavBlob.value = null;
       // 캡처 노드 일괄 초기화
@@ -232,17 +232,17 @@ async function toggleRec() {
   }
 }
 
-// Stop capture and produce WAV Blob
+// 캡처 중지 및 WAV Blob 생성
 async function stopRecording() {
   try {
     if (recorder.value) recorder.value.state = 'inactive';
-    // stop nodes and tracks
+    // 노드 및 트랙 중지
       // 캡처 노드 및 스트림 정리
       cleanupCaptureNodes();
 
     stopVolMeter();
 
-    // Concatenate pcmChunks
+  // pcmChunks 연결
     let totalLen = 0;
     for (const c of pcmChunks) totalLen += c.length;
     if (totalLen === 0) {
@@ -257,7 +257,7 @@ async function stopRecording() {
         offset += c.length;
       }
 
-      // Resample if needed to 16k
+  // 필요시 16k로 리샘플
       const origSampleRate = audioContext ? audioContext.sampleRate : sampleRate.value || 48000;
       const targetRate = 16000;
       let outputSamples = combined;
@@ -271,7 +271,7 @@ async function stopRecording() {
       mimeType.value = 'audio/wav';
       sampleRate.value = targetRate;
       console.log('프: RecorderPanel - 생성된 WAV 크기:', wavBlob.size);
-      // For backwards compatibility also set chunks as single blob
+  // 하위호환 위해 chunks에 Blob 설정
       chunks.value = [wavBlob];
     }
 
@@ -292,7 +292,7 @@ async function stopRecording() {
   }
 }
 
-// Simple linear resampler for Float32Array
+// 간단 선형 리샘플러(Float32Array)
 function resampleBuffer(buffer, inSampleRate, outSampleRate) {
   if (inSampleRate === outSampleRate) return buffer;
   const ratio = inSampleRate / outSampleRate;
@@ -458,7 +458,7 @@ function stopVolMeter() {
   volume.value = 0;
 }
 
-// Blob -> base64 변환(간단한 async 래퍼)
+// Blob -> base64 변환
 async function blobToBase64(blob) {
   return await new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -476,23 +476,23 @@ async function blobToBase64(blob) {
   });
 }
 
-// 녹음 Blob을 16kHz mono PCM WAV로 변환
+// 녹음 Blob을 16kHz mono WAV로 변환
 async function convertTo16kHzWav(blob) {
   try {
     const arrayBuffer = await blob.arrayBuffer();
-    // Decode using a short-lived AudioContext
+  // 짧은 AudioContext로 디코드
     const decodeCtx = new (window.AudioContext || window.webkitAudioContext)();
     const audioBuffer = await decodeCtx.decodeAudioData(arrayBuffer);
-    // Create OfflineAudioContext for resampling to 16kHz mono
+  // OfflineAudioContext로 16kHz mono 리샘플
     const targetSampleRate = 16000;
     const numChannels = 1;
     const length = Math.ceil(audioBuffer.duration * targetSampleRate);
     const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     const offlineCtx = new OfflineCtx(numChannels, length, targetSampleRate);
 
-    // Create buffer source and copy channels (mix to mono)
+  // 버퍼 소스 생성, 채널 복사(모노로 혼합)
     const source = offlineCtx.createBufferSource();
-    // If original has multiple channels, mix them down to mono in a temporary buffer
+  // 다중채널이면 임시버퍼로 모노 혼합
     if (audioBuffer.numberOfChannels > 1) {
       const tmp = offlineCtx.createBuffer(1, audioBuffer.length, audioBuffer.sampleRate);
       const out = tmp.getChannelData(0);
@@ -510,11 +510,11 @@ async function convertTo16kHzWav(blob) {
     source.start(0);
     const rendered = await offlineCtx.startRendering();
 
-    // Get mono channel data
+  // 모노 채널 데이터 취득
     const chanData = rendered.getChannelData(0);
-    // Encode WAV (16-bit PCM)
+  // WAV(16-bit PCM) 인코딩
     const wavBuffer = encodeWAV(chanData, targetSampleRate);
-    // Close decoders to free resources
+  // 디코더 닫아 자원 해제
   try { decodeCtx.close(); } catch (e) { console.warn('프: RecorderPanel - decodeCtx.close 실패(무시):', e); }
 
     return new Blob([wavBuffer], { type: 'audio/wav' });
@@ -565,14 +565,13 @@ function writeString(view, offset, string) {
 // STT API 호출 (간단한 async/await 흐름)
 async function sendToSTT(audioBlob) {
   try {
-    // Ensure we send a consistent 16kHz mono PCM WAV to the server to avoid
-    // encoding/sampleRate mismatch. Try converting the recorded blob first.
+  // 서버로 일관된 16kHz mono WAV 전송(인코딩/샘플레이트 불일치 방지)
     let sendBlob = audioBlob;
     try {
       const wavBlob = await convertTo16kHzWav(audioBlob);
       if (wavBlob && wavBlob.size > 0) {
         sendBlob = wavBlob;
-        // server expects sampleRate metadata; set to 16000 for converted wav
+  // 서버에 sampleRate 메타 전송(변환시 16000)
         sampleRate.value = 16000;
         mimeType.value = 'audio/wav';
         console.log('프: RecorderPanel - 변환된 WAV 사용 (16kHz). 크기:', wavBlob.size);
@@ -580,10 +579,10 @@ async function sendToSTT(audioBlob) {
     } catch (e) {
       console.warn('프: RecorderPanel - WAV 변환 실패, 원본 Blob 사용:', e);
     }
-    // 우선 FormData로 전송 시도(메모리 절약)
+  // 우선 FormData 전송(메모리 절약)
     try {
   const form = new FormData();
-  // Use converted WAV when available, fallback to original
+  // 변환된 WAV 우선 사용, 실패시 원본 폴백
   const filename = mimeType.value === 'audio/wav' ? 'recording.wav' : 'recording.webm';
   form.append('audio', sendBlob, filename);
   form.append('sampleRate', String(sampleRate.value));
@@ -601,7 +600,7 @@ async function sendToSTT(audioBlob) {
       console.warn('프: RecorderPanel - form 전송 예외, base64 폴백:', e);
     }
 
-    // FormData 실패 시 base64 폴백
+  // FormData 실패시 base64 폴백
     const base64Audio = await blobToBase64(sendBlob);
     const res = await fetch('http://localhost:3001/api/transcribe', {
       method: 'POST',

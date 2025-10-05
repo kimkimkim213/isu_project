@@ -66,11 +66,11 @@ app.post('/api/summarize', async (req, res) => {
     res.json({ summary });
     } catch (error) {
     console.error('백: 요약 오류:', error);
-    res.status(500).json({ error: '요약 실패', details: error.message });
+    res.status(500).json({ error: '요약 실패', 사유: error && error.message ? error.message : String(error) });
   }
 });
 
-// 음성 전사(STT) 처리
+// 음성 전사 처리
 app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
   try {
     // SpeechClient를 초기화
@@ -127,17 +127,17 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
 
   const audio = { content: audioBuffer.toString('base64') };
 
-  // Map common incoming MIME types to Google Speech encodings.
-  // For WAV files containing 16-bit PCM data use LINEAR16.
+  // MIME 타입을 STT 인코딩으로 매핑
+  // WAV(16-bit PCM)는 LINEAR16 사용
   let encoding = 'ENCODING_UNSPECIFIED';
   if (mimeType && mimeType.includes('webm')) {
     encoding = 'WEBM_OPUS';
   } else if (mimeType && mimeType.includes('wav')) {
-    // The Speech API expects 'LINEAR16' for PCM WAV files (16-bit PCM).
-    encoding = 'LINEAR16';
+  // Speech API용 PCM WAV 인코딩 설정
+  encoding = 'LINEAR16';
   }
 
-  // Ensure sampleRate is a number and set default to 16000 for WAV/LINEAR16
+  // sampleRate 숫자 보장, 기본 16000
   if (!sampleRate || typeof sampleRate !== 'number' || Number.isNaN(sampleRate)) {
     sampleRate = 16000;
   }
