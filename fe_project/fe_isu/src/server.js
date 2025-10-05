@@ -73,7 +73,7 @@ app.post('/api/summarize', async (req, res) => {
 // 음성 전사(STT) 처리
 app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
   try {
-    // SpeechClient를 요청 시점에 생성(인증 실패를 클라이언트에 명확히 전달하기 위함)
+    // SpeechClient를 초기화
     let speechClient;
     try {
       speechClient = new SpeechClient({ keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS });
@@ -92,11 +92,11 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     let mimeType = null;
 
     if (req.file) {
-      // form-data로 파일이 올라온 경우 (비동기 I/O 사용)
+      // form-data로 파일이 올라온 경우 비동기 실행
       const fp = req.file.path;
       mimeType = req.file.mimetype || 'audio/webm';
       try {
-        // 비동기 파일 읽기
+        // 파일 읽기
         audioBuffer = await fs.promises.readFile(fp);
         console.log('백: 업로드된 파일 읽음:', fp);
         console.log('백: 파일 메타 - originalname:', req.file.originalname, 'mimetype:', mimeType, 'size:', audioBuffer.length);
@@ -105,7 +105,7 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
         console.error('백: 업로드 파일 읽기 오류:', e);
         return res.status(500).json({ error: '파일 처리 실패', details: e.message });
       } finally {
-        // 비동기 삭제, 실패 시 경고만 남김
+        // 파일 삭제, 실패 시 경고만 남김
         fs.promises.unlink(fp).catch(err => console.warn('백: 업로드 임시파일 삭제 실패(무시):', err && err.message ? err.message : err));
       }
       sampleRate = req.body.sampleRate ? Number(req.body.sampleRate) : 16000;
@@ -151,26 +151,15 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     };
 
     console.log('백: Google 전송 설정:', JSON.stringify(config, null, 2));
-    // Decide whether to use recognize (동기, 짧은 오디오) or longRunningRecognize (비동기, 긴 오디오)
-    // 기준: audioBuffer 크기 > 1.5MB -> longRunningRecognize (대략 1분 이상의 오디오일 때 안전)
-    const LONG_THRESHOLD_BYTES = 1_500_000; // 약 1.5MB
+    // 모든 오디오에 대해 longRunningRecognize 사용(동기 recognize 제거)
     let response;
     const callStart = Date.now();
-    if (audioBuffer.length > LONG_THRESHOLD_BYTES) {
-      console.log('백: 큰 오디오 감지 - longRunningRecognize 사용 (bytes):', audioBuffer.length);
-      // longRunningRecognize는 비동기 작업을 반환
-      const [operation] = await speechClient.longRunningRecognize({ audio, config });
-      // 기다려서 완료 결과 받기
-      const [opResponse] = await operation.promise();
-      response = opResponse;
-      console.log('백: Google longRunningRecognize 완료');
-    } else {
-      const [syncResp] = await speechClient.recognize({ audio, config });
-      response = syncResp;
-      console.log('백: Google recognize 완료');
-    }
+    console.log('백: longRunningRecognize 호출시작, bytes:', audioBuffer.length);
+    const [operation] = await speechClient.longRunningRecognize({ audio, config });
+    const [opResponse] = await operation.promise();
+    response = opResponse;
     const callDur = Date.now() - callStart;
-    console.log('백: Google STT 호출 완료 (ms):', callDur);
+    console.log('백: Google longRunningRecognize 완료 (ms):', callDur);
   try { console.log('백: Google STT 응답 요약:', JSON.stringify(response, ['results','alternatives','transcript'], 2).slice(0,2000)); } catch (e) { console.warn('백: STT 응답 요약 출력 실패(무시):', e && e.message ? e.message : e); }
 
     const transcription = (response.results || [])
