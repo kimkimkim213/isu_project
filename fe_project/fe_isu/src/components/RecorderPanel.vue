@@ -46,16 +46,6 @@
       </div>
     </div>
 
-    <!-- Custom Message Modal (instead of alert) -->
-    <div v-if="showMsgModal" class="message-modal-overlay">
-      <div class="message-modal-content">
-        <h3>{{ msgTitle }}</h3>
-        <p>{{ msgContent }}</p>
-        <button @click="closeMsg">확인</button>
-      </div>
-    </div>
-
-    
     <div v-if="isTranscribing" class="transcribing-modal-overlay">
       <div class="transcribing-modal-content">
         <div class="spinner"></div>
@@ -161,7 +151,7 @@ function cleanupCaptureNodes() {
 
 // 아이콘 클릭 처리
 function onIconClick() {
-  if (showMsgModal.value || isTranscribing.value) return;
+  if (isTranscribing.value) return;
 
   if (showNamePrompt.value) {
     cancelNamePrompt();
@@ -174,7 +164,7 @@ function onIconClick() {
 
 // 녹음 버튼 클릭 처리
 function onRecBtnClick() {
-  if (showMsgModal.value || isTranscribing.value) return;
+  if (isTranscribing.value) return;
 
   if (!showOpts.value && !showNamePrompt.value) {
     toggleRec();
@@ -183,9 +173,7 @@ function onRecBtnClick() {
 
 // 오버레이 클릭 처리
 function onOverlayClick() {
-  if (showMsgModal.value) {
-    closeMsg();
-  } else if (isTranscribing.value) {
+  if (isTranscribing.value) {
     return; 
   } else if (showNamePrompt.value) {
     cancelNamePrompt();
@@ -195,7 +183,7 @@ function onOverlayClick() {
 }
 
 async function toggleRec() {
-  if (showOpts.value || showNamePrompt.value || showMsgModal.value || isTranscribing.value) {
+  if (showOpts.value || showNamePrompt.value || isTranscribing.value) {
     return;
   }
 
@@ -223,7 +211,7 @@ async function toggleRec() {
   console.log('프: RecorderPanel - 녹음 시작');
     } catch (error) {
   console.error('프: RecorderPanel - 마이크 접근 오류:', error);
-      showMsg("마이크 오류", "마이크 접근 권한이 필요합니다.");
+      window.alert("마이크 접근 권한이 필요합니다.");
       resetState();
     }
   } else {
@@ -278,7 +266,7 @@ async function stopRecording() {
     // If options menu was open when stopping, show filename prompt
     if (showOpts.value) {
       if (!lastWavBlob.value) {
-        showMsg('녹음 오류', '녹음된 데이터가 없습니다.');
+        window.alert('녹음된 데이터가 없습니다.');
         resetState();
         return;
       }
@@ -319,7 +307,7 @@ async function promptSave() {
 // 저장 확인
 async function confirmSave() {
   if (chunks.value.length === 0) {
-    showMsg("저장 오류", "저장할 녹음 데이터가 없습니다.");
+    window.alert("저장할 녹음 데이터가 없습니다.");
     resetState();
     return;
   }
@@ -327,7 +315,7 @@ async function confirmSave() {
   const audioBlob = new Blob(chunks.value, { type: 'audio/webm' }); 
 
   if (audioBlob.size === 0) {
-    showMsg("저장 오류", "녹음 파일이 비어 있습니다.");
+    window.alert("녹음 파일이 비어 있습니다.");
     resetState();
     return;
   }
@@ -342,10 +330,10 @@ async function confirmSave() {
   try {
     transcription = await sendToSTT(audioBlob);
   console.log('프: RecorderPanel - 전사 결과:', transcription);
-    showMsg('변환 완료', '음성이 텍스트로 변환되었습니다!');
+    window.alert('음성이 텍스트로 변환되었습니다!');
   } catch (error) {
   console.error('프: RecorderPanel - STT 오류:', error);
-    showMsg('STT 오류', '음성 변환 중 문제가 발생했습니다.');
+    window.alert('음성 변환 중 문제가 발생했습니다.');
     transcription = '텍스트 변환 실패';
   } finally {
     isTranscribing.value = false;
@@ -363,7 +351,7 @@ function discardRec() {
   }
   chunks.value = [];
   console.log('프: RecorderPanel - 녹음 저장 안함');
-  showMsg("녹음 삭제", "녹음본이 저장되지 않았습니다.");
+  window.alert("녹음본이 저장되지 않았습니다.");
   resetState();
 }
 
@@ -393,23 +381,6 @@ function resetState() {
   }
   recorder.value = null;
   stopVolMeter();
-}
-
-// 메시지 모달
-const showMsgModal = ref(false);
-const msgTitle = ref("");
-const msgContent = ref("");
-
-function showMsg(title, content) {
-  msgTitle.value = title;
-  msgContent.value = content;
-  showMsgModal.value = true;
-}
-
-function closeMsg() {
-  showMsgModal.value = false;
-  msgTitle.value = "";
-  msgContent.value = "";
 }
 
 // 볼륨 미터 시작

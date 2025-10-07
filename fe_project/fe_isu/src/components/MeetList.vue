@@ -59,20 +59,6 @@
     </div>
     <p v-if="meets.length === 0" class="no-meetings-message">저장된 대화가 없습니다.</p>
 
-    <!-- 삭제 확인, 정보 메시지  -->
-  <div v-if="showMsgVisible" class="message-modal-overlay">
-      <div class="message-modal-content">
-        <h3>{{ msgTitle }}</h3>
-        <p>{{ msgContent }}</p>
-        <div class="modal-buttons" v-if="msgType === 'confirmDelete'">
-            <button @click="deleteRec" class="confirm-button"> 삭제</button>
-            <button @click="closeMsg" class="cancel-button">취소</button>
-        </div>
-        <button v-else @click="closeMsg" class="ok-button">확인</button>
-      </div>
-    </div>
-
-    
     <div v-if="showTxtModal" class="transcription-modal-overlay">
       <div class="transcription-modal-content">
         <h3>{{ currentMeet.title }}</h3>
@@ -143,179 +129,153 @@ export default {
   },
   emits: ['delRec', 'updateRecName', 'reqSum', 'closeSum'], // 이벤트 목록
 
-  data() {
-    return {
-      meets: [],
-      editMeetId: null,
-  editName: '',
-  showMsgVisible: false,
-      msgTitle: '',
-      msgContent: '',
-      msgType: '',
-      delId: null,
-      showTxtModal: false,
-      currentTxt: '',
-      currentTxtName: '',
-      showTxtView: false,
-      currentMeet: null,
-      showSum: this.showSummary,
-    };
-  },
-  watch: {
-    showSummary(newVal) {
-      this.showSum = newVal;
+    data() {
+      return {
+        meets: [],
+        editMeetId: null,
+        editName: '',
+        showTxtModal: false,
+        currentTxt: '',
+        currentTxtName: '',
+        showTxtView: false,
+        currentMeet: null,
+        showSum: this.showSummary,
+      };
     },
-    records: {
-      immediate: true,
-      handler(newRecs) {
-  // 녹음 목록 갱신
-  console.log('프: MeetList - 목록 갱신. 수:', newRecs.length);
-
-  // 시간순 정렬
-        const sortedRecs = [...newRecs].sort((a, b) => {
-          return new Date(b.timestamp) - new Date(a.timestamp); 
-        });
-
-        this.meets = sortedRecs.map((rec) => {
-          const audioUrl = rec.audioBlob ? URL.createObjectURL(rec.audioBlob) : null;
-          const date = new Date(rec.timestamp);
-          const meetItem = {
-            id: rec.id,
-            title: rec.filename || `녹음본 ${date.toLocaleString()}`,
-            date: date.toLocaleString(),
-            audioUrl: audioUrl,
-
-            originalTimestamp: rec.timestamp, 
-            audioBlob: rec.audioBlob, 
-            transcription: rec.transcription || '텍스트 변환 결과 없음'
-          };
-          console.log(`프: MeetList - 항목 매핑 ID:${meetItem.id} 전사 길이:${(meetItem.transcription||'').length}`);
-          return meetItem;
-        });
-      }
-    }
-  },
-  methods: {
-  // 다운로드 이름 생성
-    getAudioName(meet) {
-      const baseName = meet.title.replace(/[\\/:*?"<>|]/g, '_');
-      return `${baseName}.webm`;
-    },
-    
-  // 삭제 확인창
-  confirmDelete(id, title) {
-        this.delId = id;
-        this.showMsg('녹음본 삭제', `'${title}' 녹음본을 삭제하시겠습니까?`, 'confirmDelete');
-    },
-
-  // 삭제 실행
-  deleteRec() {
-    if (this.delId) {
-      this.$emit('delRec', this.delId);
-      this.closeMsg();
-      this.showMsg('삭제 완료', '녹음본이 삭제되었습니다.');
-    }
-  },
-
-  // 이름 편집 시작
-    startRename(meet) {
-      if (this.editMeetId === meet.id) return;
-      this.editMeetId = meet.id;
-      this.editName = meet.title;
-      this.$nextTick(() => {
-        const input = this.$el.querySelector('.filename-edit-input');
-        if (input) { input.focus(); input.select(); }
-      });
-    },
-
-  // 이름 편집 저장
-    saveRename(id) {
-      if (this.editMeetId !== id) return;
-      const original = this.meets.find(m => m.id === id);
-      const origName = original ? original.title : '';
-      const newName = this.editName.trim();
-      if (newName === '') {
-        this.showMsg('이름 변경 실패', '파일 이름은 비울 수 없습니다.');
-        this.editName = origName; this.editMeetId = null; return;
-      }
-      if (newName === origName) { this.editMeetId = null; return; }
-      this.$emit('updateRecName', { id: id, newName: newName });
-      this.editMeetId = null;
-      this.showMsg('이름 변경 완료', `녹음본 이름이 '${newName}'(으)로 변경되었습니다.`);
-    },
-
-  // 텍스트 보기
-    viewText(meet) {
-      if (!meet.transcription || meet.transcription === '텍스트 변환 결과 없음' || meet.transcription.trim() === '') {
-        this.showMsg('텍스트 없음', '변환된 텍스트가 없습니다.');
-        return;
-      }
-      this.currentMeet = meet;
-      this.currentTxt = meet.transcription;
-      this.currentTxtName = `${meet.title.replace(/[\\/:*?"<>|]/g, '_')}.txt`;
-      this.showTxtView = false;
-      this.showTxtModal = true;
-    },
-
-  // 전체 텍스트 보기
-    showFullTxt() {
-      this.showTxtView = true;
-    },
-
-  // 텍스트 파일 다운
-    downloadTxt() {
-      if (!this.currentTxt) {
-        this.showMsg('다운로드 오류', '다운로드할 텍스트 내용이 없습니다.');
-        return;
-      }
-
-      const textBlob = new Blob([this.currentTxt], { type: 'text/plain;charset=utf-8' });
-      
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(textBlob);
-      link.download = this.currentTxtName;
-      link.click();
-      URL.revokeObjectURL(link.href);
-      
-      this.showMsg('다운로드 완료', `'${this.currentTxtName}' 텍스트 파일이 다운로드되었습니다.`);
-    },
-
-  // 텍스트 모달 닫기
-    closeTxtModal() {
-      this.showTxtModal = false;
-      this.currentTxt = '';
-      this.currentTxtName = '';
-      this.showTxtView = false;
-    },
-
-  // 뒤로가기
-    goBack() {
-      this.showTxtView = false;
-      this.showSum = false;
-    },
-  // 요약 요청
-    reqSum() {
-      this.$emit('reqSum', this.currentMeet);
-    },
-
-  // 메시지 창 표시
-    showMsg(title, content, type = 'info') {
-      this.msgTitle = title;
-      this.msgContent = content;
-      this.msgType = type;
-      this.showMsgVisible = true;
-    },
-
-    closeMsg() {
-      this.showMsgVisible = false;
-      this.msgTitle = '';
-      this.msgContent = '';
-      this.msgType = '';
-      this.delId = null;
-    }
-  },
+    watch: {
+      showSummary(newVal) {
+        this.showSum = newVal;
+      },
+      records: {
+        immediate: true,
+        handler(newRecs) {
+    // 녹음 목록 갱신
+    console.log('프: MeetList - 목록 갱신. 수:', newRecs.length);
   
-  beforeUnmount() {
+    // 시간순 정렬
+          const sortedRecs = [...newRecs].sort((a, b) => {
+            return new Date(b.timestamp) - new Date(a.timestamp); 
+          });
+  
+          this.meets = sortedRecs.map((rec) => {
+            const audioUrl = rec.audioBlob ? URL.createObjectURL(rec.audioBlob) : null;
+            const date = new Date(rec.timestamp);
+            const meetItem = {
+              id: rec.id,
+              title: rec.filename || `녹음본 ${date.toLocaleString()}`,
+              date: date.toLocaleString(),
+              audioUrl: audioUrl,
+  
+              originalTimestamp: rec.timestamp, 
+              audioBlob: rec.audioBlob, 
+              transcription: rec.transcription || '텍스트 변환 결과 없음'
+            };
+            console.log(`프: MeetList - 항목 매핑 ID:${meetItem.id} 전사 길이:${(meetItem.transcription||'').length}`);
+            return meetItem;
+          });
+        }
+      }
+    },
+    methods: {
+    // 다운로드 이름 생성
+      getAudioName(meet) {
+        // inside a character class only - and ] and ^ and \\
+        // need escaping; other backslashes were unnecessary
+  const baseName = meet.title.replace(new RegExp('[\\\\/:*?"<>|\\[\\]]', 'g'), '_');
+        return `${baseName}.webm`;
+      },
+      
+    // 삭제 확인창
+      confirmDelete(id, title) {
+        if (window.confirm(`'${title}' 녹음본을 삭제하시겠습니까?`)) {
+          this.$emit('delRec', id);
+          window.alert('녹음본이 삭제되었습니다.');
+        }
+      },
+  
+    // 이름 편집 시작
+      startRename(meet) {
+        if (this.editMeetId === meet.id) return;
+        this.editMeetId = meet.id;
+        this.editName = meet.title;
+        this.$nextTick(() => {
+          const input = this.$el.querySelector('.filename-edit-input');
+          if (input) { input.focus(); input.select(); }
+        });
+      },
+  
+    // 이름 편집 저장
+      saveRename(id) {
+        if (this.editMeetId !== id) return;
+        const original = this.meets.find(m => m.id === id);
+        const origName = original ? original.title : '';
+        const newName = this.editName.trim();
+        if (newName === '') {
+          window.alert('파일 이름은 비울 수 없습니다.');
+          this.editName = origName; this.editMeetId = null; return;
+        }
+        if (newName === origName) { this.editMeetId = null; return; }
+        this.$emit('updateRecName', { id: id, newName: newName });
+        this.editMeetId = null;
+        window.alert(`녹음본 이름이 '${newName}'(으)로 변경되었습니다.`);
+      },
+  
+    // 텍스트 보기
+      viewText(meet) {
+        if (!meet.transcription || meet.transcription === '텍스트 변환 결과 없음' || meet.transcription.trim() === '') {
+          window.alert('변환된 텍스트가 없습니다.');
+          return;
+        }
+        this.currentMeet = meet;
+        this.currentTxt = meet.transcription;
+  // Keep only necessary escapes inside the character class
+  this.currentTxtName = `${meet.title.replace(new RegExp('[\\\\/:*?"<>|\\[\\]]', 'g'), '_')}.txt`;
+        this.showTxtView = false;
+        this.showTxtModal = true;
+      },
+  
+    // 전체 텍스트 보기
+      showFullTxt() {
+        this.showTxtView = true;
+      },
+  
+    // 텍스트 파일 다운
+      downloadTxt() {
+        if (!this.currentTxt) {
+          window.alert('다운로드할 텍스트 내용이 없습니다.');
+          return;
+        }
+  
+        const textBlob = new Blob([this.currentTxt], { type: 'text/plain;charset=utf-8' });
+        
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(textBlob);
+        link.download = this.currentTxtName;
+        link.click();
+        URL.revokeObjectURL(link.href);
+        
+        window.alert(`'${this.currentTxtName}' 텍스트 파일이 다운로드되었습니다.`);
+      },
+  
+    // 텍스트 모달 닫기
+      closeTxtModal() {
+        this.showTxtModal = false;
+        this.currentTxt = '';
+        this.currentTxtName = '';
+        this.showTxtView = false;
+      },
+  
+    // 뒤로가기
+      goBack() {
+        this.showTxtView = false;
+        this.showSum = false;
+      },
+    // 요약 요청
+      reqSum() {
+        this.$emit('reqSum', this.currentMeet);
+      },
+    },
+    beforeUnmount() {
     this.meets.forEach(meet => {
       if (meet.audioUrl) {
         URL.revokeObjectURL(meet.audioUrl);

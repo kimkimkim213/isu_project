@@ -23,12 +23,7 @@ process.on('unhandledRejection', (reason, p) => {
 
 require('dotenv').config({ path: './.env' }); // 환경변수 설정
 
-// genAI는 요청 시점에 생성하여 초기화 시점의 네트워크/메타데이터 조회를 피함
-// (에러는 엔드포인트에서 처리)
 let genAI = null;
-
-// SpeechClient를 바로 생성하면 런타임에 GCP 메타데이터 조회가 발생할 수 있어
-// 요청 시점에 lazy하게 생성하도록 변경(자격증명 오류는 핸들링하여 클라이언트에 알림)
 
 app.use(cors()); // 모든 도메인 허용
 app.use(bodyParser.json({ limit: '100mb' })); // JSON 요청 크기 설정
