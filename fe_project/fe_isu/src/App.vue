@@ -44,7 +44,7 @@
 import { ref } from 'vue'
 import RecorderPanel from '@/components/RecorderPanel.vue'
 import MeetList from '@/components/MeetList.vue'
-import { useRecord } from '@/composables/ManageRecord.js'
+import { useRecordings as useRecord } from '@/composables/useRecordings.js';
 
 const tab = ref('current')
 

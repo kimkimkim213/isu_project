@@ -21,7 +21,7 @@ process.on('unhandledRejection', (reason, p) => {
   console.error('백: unhandledRejection 발생 - reason:', reason, 'promise:', p);
 });
 
-require('dotenv').config({ path: './.env' }); // 환경변수 설정
+require('dotenv').config({ path: path.join(__dirname, '.env') }); // 환경변수 설정
 
 let genAI = null;
 
@@ -29,7 +29,7 @@ app.use(cors()); // 모든 도메인 허용
 app.use(bodyParser.json({ limit: '100mb' })); // JSON 요청 크기 설정
 
 // 업로드 저장 디렉터리, multer 설정
-const UP_DIR = path.join(__dirname, '../uploads');
+const UP_DIR = path.join(__dirname, 'uploads');
 // 디렉터리 없으면 생성
 try { fs.mkdirSync(UP_DIR, { recursive: true }); } catch (e) { console.warn('백: 업로드 폴더 생성 실패(무시):', e.message); }
 const storage = multer.diskStorage({

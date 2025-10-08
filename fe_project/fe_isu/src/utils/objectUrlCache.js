@@ -1,4 +1,5 @@
-// object URL 캐시 (Blob -> object URL)
+// Object URL 캐시 관련 유틸리티 함수
+
 const cache = new Map();
 
 export function getObjectUrl(id, blob) {
@@ -17,8 +18,7 @@ export function getObjectUrl(id, blob) {
 export function revokeObjectUrl(id) {
   const url = cache.get(id);
   if (url) {
-    
-    try { URL.revokeObjectURL(url); } catch (err) { /* ignore revoke errors */ }
+    try { URL.revokeObjectURL(url); } catch (err) { /* ignore */ }
     cache.delete(id);
   }
 }
