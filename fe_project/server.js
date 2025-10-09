@@ -9,7 +9,6 @@ const fs = require('fs');
 const multer = require('multer');
 
 const app = express();
-const PORT = 3001;
 
 // 전역 예외/비동기 거부 로깅 (디버그용)
 process.on('uncaughtException', (err) => {
@@ -19,10 +18,35 @@ process.on('unhandledRejection', (reason, p) => {
   console.error('백: unhandledRejection 발생 - reason:', reason, 'promise:', p);
 });
 
-// .env 파일의 위치를 fe_isu 폴더 기준으로 설정
-require('dotenv').config({ path: path.join(__dirname, 'fe_isu', '.env') }); 
+// .env 로드: 우선 현재 작업 디렉터리의 .env, 없거나 핵심 키가 비어있으면 fe_isu/.env 시도
+require('dotenv').config();
+if (!process.env.GOOGLE_API_KEY || !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  require('dotenv').config({ path: path.join(__dirname, 'fe_isu', '.env') });
+}
 
+// PORT은 .env(또는 환경 변수)에서 우선적으로 가져오되 기본값 3001 사용
+const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
+
+// 전역 클라이언트(요청마다 생성하지 않고 재사용)
 let genAI = null;
+let speechClient = null;
+try {
+  if (process.env.GOOGLE_API_KEY) {
+    genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
+  } else {
+    console.warn('백: GOOGLE_API_KEY가 설정되지 않음 - 요약 기능 비활성화됨');
+  }
+} catch (e) {
+  console.error('백: genAI 초기화 실패:', e && e.message ? e.message : e);
+  genAI = null;
+}
+try {
+  // ADC 사용: GOOGLE_APPLICATION_CREDENTIALS 등 환경에 따라 자동 인증
+  speechClient = new SpeechClient();
+} catch (e) {
+  console.error('백: SpeechClient 초기화 실패:', e && e.message ? e.message : e);
+  speechClient = null;
+}
 
 app.use(cors()); // 모든 도메인 허용
 // 내장된 express 파서 사용
@@ -56,12 +80,9 @@ app.post('/api/summarize', async (req, res) => {
     if (!text) {
       return res.status(400).json({ error: '요약할 텍스트가 없습니다.' });
     }
-    // genAI 클라이언트를 요청 시점에 초기화
-    try {
-      if (!genAI) genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
-    } catch (e) {
-      console.error('백: genAI 초기화 실패:', e && e.message ? e.message : e);
-      return res.status(500).json({ error: '요약 엔진 초기화 실패', details: e && e.message ? e.message : String(e) });
+    // 전역 genAI 사용 여부 확인
+    if (!genAI) {
+      return res.status(500).json({ error: '요약 엔진이 초기화되지 않았습니다. 환경변수를 확인하세요.' });
     }
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     const prompt = `요약문을 제외한 다른 반응이나 말은 모두 출력하지 말고,이 다음에 주어지는 대화의 전문을 핵심을 꼽아 체계적으로 요약해줘. / 대화: ${text}`;
@@ -78,13 +99,9 @@ app.post('/api/summarize', async (req, res) => {
 // 음성 전사 처리
 app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
   try {
-    // SpeechClient를 초기화
-    let speechClient;
-    try {
-      speechClient = new SpeechClient({ keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS });
-    } catch (e) {
-      console.error('백: SpeechClient 생성 실패:', e && e.message ? e.message : e);
-      return res.status(500).json({ error: '음성인식 초기화 실패', details: e && e.message ? e.message : String(e) });
+    // 전역 SpeechClient 사용 여부 확인
+    if (!speechClient) {
+      return res.status(500).json({ error: '음성인식 클라이언트가 초기화되지 않았습니다. 환경변수를 확인하세요.' });
     }
     const startTime = Date.now();
     // 기본 메타데이터
@@ -100,22 +117,22 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
       return res.status(400).json({ error: '오디오 파일이 필요합니다.' });
     }
 
-    const fp = req.file.path;
-    mimeType = req.file.mimetype || 'audio/webm';
-    try {
-      // 파일 읽기
-      audioBuffer = await fs.promises.readFile(fp);
-      console.log('백: 업로드된 파일 읽음:', fp);
-      console.log('백: 파일 메타 - originalname:', req.file.originalname, 'mimetype:', mimeType, 'size:', audioBuffer.length);
-      try { console.log('백: 파일 바이트(선두 64 바이트, hex):', audioBuffer.slice(0, 64).toString('hex')); } catch (e) { console.warn('백: 파일 바이트 출력 실패(무시):', e && e.message ? e.message : e); }
-    } catch (e) {
-      console.error('백: 업로드 파일 읽기 오류:', e);
-      return res.status(500).json({ error: '파일 처리 실패', details: e.message });
-    } finally {
-      // 파일 삭제, 실패 시 경고만 남김
-      fs.promises.unlink(fp).catch(err => console.warn('백: 업로드 임시파일 삭제 실패(무시):', err && err.message ? err.message : err));
-    }
-    sampleRate = req.body.sampleRate ? Number(req.body.sampleRate) : 16000;
+      const fp = req.file.path;
+      mimeType = req.file.mimetype || 'audio/webm';
+      try {
+        // 파일 읽기
+        audioBuffer = await fs.promises.readFile(fp);
+        console.log('백: 업로드된 파일 읽음:', fp);
+        console.log('백: 파일 메타 - originalname:', req.file.originalname, 'mimetype:', mimeType, 'size:', audioBuffer.length);
+        try { console.log('백: 파일 바이트(선두 64 바이트, hex):', audioBuffer.slice(0, 64).toString('hex')); } catch (e) { console.warn('백: 파일 바이트 출력 실패(무시):', e && e.message ? e.message : e); }
+      } catch (e) {
+        console.error('백: 업로드 파일 읽기 오류:', e);
+        return res.status(500).json({ error: '파일 처리 실패', details: e.message });
+      } finally {
+        // 파일 삭제, 실패 시 경고만 남김
+        fs.promises.unlink(fp).catch(err => console.warn('백: 업로드 임시파일 삭제 실패(무시):', err && err.message ? err.message : err));
+      }
+      sampleRate = req.body.sampleRate ? Number(req.body.sampleRate) : 16000;
 
     console.log('백: 수신된 오디오 버퍼 크기:', audioBuffer.length, '바이트');
     console.log(`백: 수신된 오디오 속성: 샘플레이트=${sampleRate}, MIME=${mimeType}`);
