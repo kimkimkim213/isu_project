@@ -96,36 +96,26 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     let sampleRate = null;
     let mimeType = null;
 
-    if (req.file) {
-      // form-data로 파일이 올라온 경우 비동기 실행
-      const fp = req.file.path;
-      mimeType = req.file.mimetype || 'audio/webm';
-      try {
-        // 파일 읽기
-        audioBuffer = await fs.promises.readFile(fp);
-        console.log('백: 업로드된 파일 읽음:', fp);
-        console.log('백: 파일 메타 - originalname:', req.file.originalname, 'mimetype:', mimeType, 'size:', audioBuffer.length);
-        try { console.log('백: 파일 바이트(선두 64 바이트, hex):', audioBuffer.slice(0, 64).toString('hex')); } catch (e) { console.warn('백: 파일 바이트 출력 실패(무시):', e && e.message ? e.message : e); }
-      } catch (e) {
-        console.error('백: 업로드 파일 읽기 오류:', e);
-        return res.status(500).json({ error: '파일 처리 실패', details: e.message });
-      } finally {
-        // 파일 삭제, 실패 시 경고만 남김
-        fs.promises.unlink(fp).catch(err => console.warn('백: 업로드 임시파일 삭제 실패(무시):', err && err.message ? err.message : err));
-      }
-      sampleRate = req.body.sampleRate ? Number(req.body.sampleRate) : 16000;
-    } else {
-      // 기존 base64 JSON 처리
-      const { audio: base64Audio, sampleRate: sr, mimeType: mt } = req.body;
-      if (!base64Audio || !sr || !mt) {
-        return res.status(400).json({ error: '필수 정보(audio, sampleRate, mimeType)가 누락되었습니다.' });
-      }
-      audioBuffer = Buffer.from(base64Audio, 'base64');
-      console.log('백: base64로 수신 - mimeType:', mt, 'base64_len:', base64Audio.length, 'buffer_bytes:', audioBuffer.length);
-  try { console.log('백: base64 오디오 바이트(선두 64 바이트, hex):', audioBuffer.slice(0,64).toString('hex')); } catch (e) { console.warn('백: base64 바이트 출력 실패(무시):', e && e.message ? e.message : e); }
-      sampleRate = sr;
-      mimeType = mt;
+    if (!req.file) {
+      return res.status(400).json({ error: '오디오 파일이 필요합니다.' });
     }
+
+    const fp = req.file.path;
+    mimeType = req.file.mimetype || 'audio/webm';
+    try {
+      // 파일 읽기
+      audioBuffer = await fs.promises.readFile(fp);
+      console.log('백: 업로드된 파일 읽음:', fp);
+      console.log('백: 파일 메타 - originalname:', req.file.originalname, 'mimetype:', mimeType, 'size:', audioBuffer.length);
+      try { console.log('백: 파일 바이트(선두 64 바이트, hex):', audioBuffer.slice(0, 64).toString('hex')); } catch (e) { console.warn('백: 파일 바이트 출력 실패(무시):', e && e.message ? e.message : e); }
+    } catch (e) {
+      console.error('백: 업로드 파일 읽기 오류:', e);
+      return res.status(500).json({ error: '파일 처리 실패', details: e.message });
+    } finally {
+      // 파일 삭제, 실패 시 경고만 남김
+      fs.promises.unlink(fp).catch(err => console.warn('백: 업로드 임시파일 삭제 실패(무시):', err && err.message ? err.message : err));
+    }
+    sampleRate = req.body.sampleRate ? Number(req.body.sampleRate) : 16000;
 
     console.log('백: 수신된 오디오 버퍼 크기:', audioBuffer.length, '바이트');
     console.log(`백: 수신된 오디오 속성: 샘플레이트=${sampleRate}, MIME=${mimeType}`);

@@ -122,33 +122,16 @@ export async function sendToSTT(audioBlob, sampleRate, mimeType) {
       console.warn('프: audio.js - WAV 변환 실패, 원본 Blob 사용:', e);
     }
 
-    // FormData로 먼저 전송 시도
-    try {
-      const form = new FormData();
-      const filename = finalMimeType === 'audio/wav' ? 'recording.wav' : 'recording.webm';
-      form.append('audio', sendBlob, filename);
-      form.append('sampleRate', String(finalSampleRate));
-      form.append('mimeType', finalMimeType);
-      
-      const resForm = await fetch('http://localhost:3001/api/transcribe', {
-        method: 'POST',
-        body: form,
-      });
-      if (resForm.ok) {
-        const data = await resForm.json();
-        return data.transcription || '변환된 텍스트가 없습니다.';
-      }
-      console.warn('프: audio.js - form 전송 실패, base64 폴백');
-    } catch (e) {
-      console.warn('프: audio.js - form 전송 예외, base64 폴백:', e);
-    }
-
-    // FormData 실패 시 base64로 폴백
-    const base64Audio = await blobToB64(sendBlob);
+    // FormData로만 전송
+    const form = new FormData();
+    const filename = finalMimeType === 'audio/wav' ? 'recording.wav' : 'recording.webm';
+    form.append('audio', sendBlob, filename);
+    form.append('sampleRate', String(finalSampleRate));
+    form.append('mimeType', finalMimeType);
+    
     const res = await fetch('http://localhost:3001/api/transcribe', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ audio: base64Audio, sampleRate: finalSampleRate, mimeType: finalMimeType }),
+      body: form,
     });
 
     if (!res.ok) {
@@ -158,6 +141,7 @@ export async function sendToSTT(audioBlob, sampleRate, mimeType) {
 
     const data = await res.json();
     return data.transcription || '변환된 텍스트가 없습니다.';
+
   } catch (error) {
     console.error('프: audio.js - sendToSTT 실패:', error);
     throw error; // 호출자에서 처리
