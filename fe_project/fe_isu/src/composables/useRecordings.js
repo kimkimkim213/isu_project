@@ -1,57 +1,9 @@
 import { ref, watch, onMounted } from 'vue';
 import { getAll, put, del, base64ToBlob, blobToDataURL } from '@/utils';
 
-// 오디오 미터 composable
-const shared = { ctx: null, analyser: null, data: null, src: null, raf: null };
-export function useAudioMeter() {
-  const volume = ref(0);
-
-  function start(stream) {
-    if (!stream) return;
-    try {
-      if (!shared.ctx) shared.ctx = new (window.AudioContext || window.webkitAudioContext)();
-      if (shared.src) try { shared.src.disconnect(); } catch (err) { /* ignore */ }
-      shared.src = shared.ctx.createMediaStreamSource(stream);
-      shared.analyser = shared.ctx.createAnalyser();
-      shared.analyser.fftSize = 256;
-      shared.data = new Uint8Array(shared.analyser.frequencyBinCount);
-      shared.src.connect(shared.analyser);
-
-      const loop = () => {
-        try {
-          shared.analyser.getByteFrequencyData(shared.data);
-          let sum = 0;
-          for (let i = 0; i < shared.data.length; i++) sum += shared.data[i];
-          const avg = sum / shared.data.length;
-          volume.value = Math.min(100, Math.round((avg / 255) * 100));
-        } catch (e) {
-          volume.value = 0;
-        }
-        shared.raf = requestAnimationFrame(loop);
-      };
-
-      loop();
-    } catch (e) {
-      console.error('useAudioMeter.start', e);
-    }
-  }
-
-  function stop() {
-    try {
-      if (shared.raf) { cancelAnimationFrame(shared.raf); shared.raf = null; }
-      if (shared.src) try { shared.src.disconnect(); } catch (err) { /* ignore */ } finally { shared.src = null; }
-      volume.value = 0;
-    } catch (e) {
-      console.error('useAudioMeter.stop', e);
-    }
-  }
-
-  return { volume, start, stop, getSampleRate: () => (shared.ctx ? shared.ctx.sampleRate : null) };
-}
-
 // 새 ID 생성
 function newId() {
-
+  return Date.now().toString(36) + Math.random().toString(36).substring(2);
 }
 
 // 레거시 localStorage 마이그레이션

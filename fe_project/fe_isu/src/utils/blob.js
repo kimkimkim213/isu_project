@@ -23,6 +23,7 @@ export function base64ToBlob(base64OrDataUrl, fallbackMime) {
     const bin = atob(parts[1]);
     const len = bin.length;
     const arr = new Uint8Array(len);
+    
     for (let i = 0; i < len; i++) arr[i] = bin.charCodeAt(i);
     return new Blob([arr], { type: mime });
   }

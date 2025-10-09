@@ -16,7 +16,6 @@
     "fluent-ffmpeg": "^2.1.2",
     "@vueuse/core": "^13.3.0",
     "axios": "^1.10.0",
-    "body-parser": "^2.2.0",
     "core-js": "^3.8.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",

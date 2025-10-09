@@ -1,6 +1,4 @@
 const express = require('express');
-const bodyParser = require('body-parser');
-// 환경변수 관리: .env 로드
 const cors = require('cors');
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');//전사본 요약용 API
@@ -21,15 +19,27 @@ process.on('unhandledRejection', (reason, p) => {
   console.error('백: unhandledRejection 발생 - reason:', reason, 'promise:', p);
 });
 
-require('dotenv').config({ path: path.join(__dirname, '.env') }); // 환경변수 설정
+// .env 파일의 위치를 fe_isu 폴더 기준으로 설정
+require('dotenv').config({ path: path.join(__dirname, 'fe_isu', '.env') }); 
 
 let genAI = null;
 
 app.use(cors()); // 모든 도메인 허용
-app.use(bodyParser.json({ limit: '100mb' })); // JSON 요청 크기 설정
+// 내장된 express 파서 사용
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
-// 업로드 저장 디렉터리, multer 설정
-const UP_DIR = path.join(__dirname, 'uploads');
+// JSON 파싱 오류를 명확히 처리하는 에러 핸들러
+app.use((err, req, res, next) => {
+  if (err && (err instanceof SyntaxError || err.type === 'entity.parse.failed')) {
+    console.error('백: JSON 파싱 오류:', err.message);
+    return res.status(400).json({ error: '유효하지 않은 JSON 요청' });
+  }
+  next(err);
+});
+
+// 업로드 디렉터리를 'fe_isu/uploads'로 설정
+const UP_DIR = path.join(__dirname, 'fe_isu', 'uploads');
 // 디렉터리 없으면 생성
 try { fs.mkdirSync(UP_DIR, { recursive: true }); } catch (e) { console.warn('백: 업로드 폴더 생성 실패(무시):', e.message); }
 const storage = multer.diskStorage({
