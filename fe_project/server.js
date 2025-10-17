@@ -13,10 +13,10 @@ const app = express();
 // 전역 예외 처리
 process.on('uncaughtException', (err) => {
   console.error('백: uncaughtException 발생:', err && err.stack ? err.stack : err);
-});
+});//동기 처리중 예외 발생시
 process.on('unhandledRejection', (reason, p) => {
   console.error('백: unhandledRejection 발생 - reason:', reason, 'promise:', p);
-});
+});//비동기 처리중 예외 발생시
 
 //환경변수 로드 및 확인
 require('dotenv').config();
@@ -48,6 +48,7 @@ try {
 }
 
 app.use(cors());
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 //파싱 처리 제한 - 50MB
@@ -64,7 +65,8 @@ app.use((err, req, res, next) => {
 //클라이언트 데이터 수신용 파일 생성
 const UP_DIR = path.join(__dirname, 'fe_isu', 'uploads'); //업로드 디렉토리 설정
 // 디렉토리 없으면 생성
-try { fs.mkdirSync(UP_DIR, { recursive: true }); } catch (e) { console.warn('백: 업로드 폴더 생성 실패(무시):', e.message); }
+try { fs.mkdirSync(UP_DIR, { recursive: true }); }
+catch (e) { console.warn('백: 업로드 폴더 생성 실패(무시):', e.message); }
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UP_DIR),
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
@@ -115,7 +117,7 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     // 기본 메타데이터
     const contentType = req.headers['content-type'] || '';
     const contentLength = req.get('content-length') || '';
-    console.log('백: 전사 요청 수신 - content-type:', contentType, '길이:', contentLength);
+    console.log('백: 전사 요청 수신 - 타입:', contentType, '길이:', contentLength);
 
     let audioBuffer = null;
     let sampleRate = null;
