@@ -1,0 +1,14 @@
+# Ignore Google Cloud service account keys and local secrets
+# Specifically ignore the credentials key used by the app
+/credentials/key.json
+
+# Ignore any other JSON keys in credentials (optional but safer)
+/credentials/*.json
+
+# Local env files
+.env
+.env.*
+
+# Node modules and common patterns
+node_modules/
+.DS_Store
