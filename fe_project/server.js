@@ -26,31 +26,20 @@ if (!process.env.GOOGLE_API_KEY || !process.env.GOOGLE_APPLICATION_CREDENTIALS) 
 }
 
 // GOOGLE_APPLICATION_CREDENTIALS가 .env에 상대경로로 설정되어 있을 수 있으므로
-// 실행 디렉터리에 따라 잘못 해석되는 것을 막기 위해 절대 경로로 정규화합니다.
+// 실행 디렉터리에 따라 잘못 해석되는 것을 막기 위해 __dirname 기준으로 절대 경로로 정규화합니다.
 if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
   try {
-    // Sanitize: remove surrounding quotes and whitespace that may come from .env values
-    let gac = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-    gac = String(gac).trim();
-    if ((gac.startsWith('"') && gac.endsWith('"')) || (gac.startsWith("'") && gac.endsWith("'"))) {
-      gac = gac.slice(1, -1).trim();
+    const gac = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    if (gac && !path.isAbsolute(gac)) {
+      process.env.GOOGLE_APPLICATION_CREDENTIALS = path.resolve(__dirname, gac);
     }
-    // Remove accidental leading/trailing quotes leftover
-    gac = gac.replace(/^['"]+|['"]+$/g, '').trim();
-
-    // Resolve relative paths against this file's directory; leave absolute paths as-is
-    if (gac.length > 0) {
-      if (!path.isAbsolute(gac)) {
-        process.env.GOOGLE_APPLICATION_CREDENTIALS = path.resolve(__dirname, gac);
-      } else {
-        process.env.GOOGLE_APPLICATION_CREDENTIALS = gac;
-      }
-      console.log('백: GOOGLE_APPLICATION_CREDENTIALS normalized to', process.env.GOOGLE_APPLICATION_CREDENTIALS);
-    }
+    console.log('백: GOOGLE_APPLICATION_CREDENTIALS normalized to', process.env.GOOGLE_APPLICATION_CREDENTIALS);
   } catch (e) {
     console.warn('백: GOOGLE_APPLICATION_CREDENTIALS 정규화 실패(무시):', e && e.message ? e.message : e);
   }
 }
+
+// GOOGLE_API_KEY는 .env에서 직접 설정되어야 합니다. 필요하면 수동으로 값을 확인하세요.
 
 // PORT 번호 설정 - 기본값 3001
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;

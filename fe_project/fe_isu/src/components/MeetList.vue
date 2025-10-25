@@ -67,30 +67,37 @@
           <div class="option-box view-full" @click="showFullTxt">
             <h4>전체 대화 보기</h4>
           </div>
-          <div class="option-box summarize" @click="reqSum">
+          <div class="option-box summarize" @click="reqSum(currentMeet)">
             <div v-if="isSummarizing && summarizingMeetingId === currentMeet.id" class="loader"></div>
             <h4 v-else>요약하기</h4>
           </div>
         </div>
 
         
+        <!-- Summary viewer (visuals kept as original) -->
         <div v-if="showSum" class="summary-viewer">
           <div class="summary-text-area">
             <p>{{ summaryText }}</p>
           </div>
+          <div class="modal-buttons">
+            <button class="prompt-button download" @click="downloadDisplayed">
+              요약 다운로드 (.txt)
+            </button>
+          </div>
         </div>
+
+        <!-- Full transcription viewer (visuals kept as original) -->
         <div v-if="showTxtView && !showSum" class="text-viewer">
           <div class="transcription-text-area">
             <p>{{ currentTxt }}</p>
           </div>
           <div class="modal-buttons">
-            <button class="prompt-button download" @click="downloadTxt">
+            <button class="prompt-button download" @click="downloadDisplayed">
               파일로 다운로드 (.txt)
             </button>
           </div>
         </div>
-
-        
+        <!-- modal bottom action button (restore original behavior) -->
         <button 
           class="prompt-button cancel"
           @click="showTxtView || showSum ? goBack() : closeTxtModal()"
@@ -129,7 +136,7 @@ export default {
   },
   emits: ['delRec', 'updateRecName', 'reqSum', 'closeSum'], // 이벤트 목록
 
-    data() {
+  data() {
       return {
         meets: [],
         editMeetId: null,
@@ -168,7 +175,8 @@ export default {
   
               originalTimestamp: rec.timestamp, 
               audioBlob: rec.audioBlob, 
-              transcription: rec.transcription || '텍스트 변환 결과 없음'
+              transcription: rec.transcription || '텍스트 변환 결과 없음',
+              summary: rec.summary || ''
             };
             console.log(`프: MeetList - 항목 매핑 ID:${meetItem.id} 전사 길이:${(meetItem.transcription||'').length}`);
             return meetItem;
@@ -181,7 +189,7 @@ export default {
       getAudioName(meet) {
         // inside a character class only - and ] and ^ and \\
         // need escaping; other backslashes were unnecessary
-  const baseName = meet.title.replace(new RegExp('[\\\\/:*?"<>|\\[\\]]', 'g'), '_');
+      const baseName = meet.title.replace(/[\\/:*?"<>|]/g, '_').replace(/\[/g, '_').replace(/\]/g, '_');
         return `${baseName}.webm`;
       },
       
@@ -229,7 +237,7 @@ export default {
         this.currentMeet = meet;
         this.currentTxt = meet.transcription;
   // Keep only necessary escapes inside the character class
-  this.currentTxtName = `${meet.title.replace(new RegExp('[\\\\/:*?"<>|\\[\\]]', 'g'), '_')}.txt`;
+      this.currentTxtName = `${meet.title.replace(/[\\/:*?"<>|]/g, '_').replace(/\[/g, '_').replace(/\]/g, '_')}.txt`;
         this.showTxtView = false;
         this.showTxtModal = true;
       },
@@ -256,6 +264,29 @@ export default {
         
         window.alert(`'${this.currentTxtName}' 텍스트 파일이 다운로드되었습니다.`);
       },
+
+      // 요약 파일 다운로드
+      downloadSummary() {
+        const text = this.summaryText || (this.currentMeet && this.currentMeet.summary) || '';
+        if (!text || String(text).trim() === '') {
+          window.alert('다운로드할 요약문이 없습니다.');
+          return;
+        }
+
+        const safeName = (this.currentMeet && this.currentMeet.title)
+          ? this.currentMeet.title.replace(/[\\/:*?"<>|]/g, '_').replace(/\[/g, '_').replace(/\]/g, '_')
+          : 'summary';
+        const fileName = `${safeName}_summary.txt`;
+
+        const textBlob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(textBlob);
+        link.download = fileName;
+        link.click();
+        URL.revokeObjectURL(link.href);
+
+        window.alert(`'${fileName}' 요약 파일이 다운로드되었습니다.`);
+      },
   
     // 텍스트 모달 닫기
       closeTxtModal() {
@@ -269,10 +300,25 @@ export default {
       goBack() {
         this.showTxtView = false;
         this.showSum = false;
+        // notify parent to close summary and clear any parent-held summary state
+        this.$emit('closeSum');
       },
     // 요약 요청
-      reqSum() {
-        this.$emit('reqSum', this.currentMeet);
+      reqSum(meet) {
+        // prefer explicit argument but fallback to currentMeet
+        this.$emit('reqSum', meet || this.currentMeet);
+      },
+      // Unified download handler used by both viewers
+      downloadDisplayed() {
+        if (this.showSum) {
+          this.downloadSummary();
+          return;
+        }
+        if (this.showTxtView) {
+          this.downloadTxt();
+          return;
+        }
+        window.alert('다운로드할 내용이 없습니다.');
       },
     },
     beforeUnmount() {
@@ -523,12 +569,8 @@ h2 {
     align-items: center;
     border-radius: 12px;
     cursor: pointer;
-    transition: background-color 0.3s, transform 0.2s;
+    transition: background-color 0.3s ease;
     color: white;
-}
-
-.option-box:hover {
-    transform: translateY(-5px);
 }
 
 .option-box.view-full {
@@ -600,6 +642,7 @@ h2 {
 
 .text-viewer .modal-buttons {
   display: flex;
+  width: 100%;
   justify-content: center;
   flex-shrink: 0;
 }
@@ -612,6 +655,7 @@ h2 {
   padding: 12px 24px;
   border-radius: 8px;
   border: none;
+  width: 100%;
   font-size: 1.1em;
   font-weight: 500;
   cursor: pointer;
@@ -624,8 +668,8 @@ h2 {
 }
 
 .prompt-button.download {
+  position: relative;
   background-color: #4CAF50;
-  flex-grow: 1;
 }
 .prompt-button.download:hover {
   background-color: #45a049;

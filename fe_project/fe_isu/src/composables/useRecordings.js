@@ -23,7 +23,8 @@ async function migrateFromLocalStorage(records) {
       timestamp: item.timestamp,
       audioBlob: blob,
       filename: item.filename,
-      transcription: item.transcription || ''
+      transcription: item.transcription || '',
+      summary: item.summary || ''
     };
     records.value.push(rec);
 
@@ -93,7 +94,8 @@ export function useRecordings({ uploadToServer = true } = {}) {
             audioBlob: (typeof audioData === 'string' && audioData.startsWith('http')) ? null : audioData,
             audioUrl: (typeof audioData === 'string' && audioData.startsWith('http')) ? audioData : null,
             filename: item.filename,
-            transcription: item.transcription || ''
+            transcription: item.transcription || '',
+            summary: item.summary || ''
           });
         });
         return;
@@ -132,6 +134,7 @@ export function useRecordings({ uploadToServer = true } = {}) {
           timestamp: rec.timestamp,
           filename: rec.filename,
           transcription: rec.transcription,
+          summary: rec.summary,
           audioBlob: storeAudio,
           audioType
         };
@@ -152,7 +155,8 @@ export function useRecordings({ uploadToServer = true } = {}) {
       audioUrl: null,
       timestamp,
       filename: filename || `회의록_${new Date(timestamp).toLocaleString('ko-KR').replace(/[:.]/g, '-')}`,
-      transcription
+      transcription,
+      summary: ''
     };
     records.value.push(recObj);
   }
@@ -174,7 +178,12 @@ export function useRecordings({ uploadToServer = true } = {}) {
     );
   }
 
-  return { records, addRec, delRec, updateRecName };
+  // 요약 저장/업데이트
+  function updateRecSummary({ id, summary }) {
+    records.value = records.value.map(r => r.id === id ? { ...r, summary } : r);
+  }
+
+  return { records, addRec, delRec, updateRecName, updateRecSummary };
 }
 
 // 이전 버전과의 호환성을 위해 useRecord로도 export

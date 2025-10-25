@@ -48,7 +48,7 @@ import { useRecordings as useRecord } from '@/composables/useRecordings.js';
 
 const tab = ref('current')
 
-const { records, addRec, delRec, updateRecName } = useRecord()
+const { records, addRec, delRec, updateRecName, updateRecSummary } = useRecord()
 
 // 녹음 완료 처리
 function onRecFinish(data) { addRec(data) }
@@ -68,9 +68,19 @@ const showSum = ref(false);
 // 요약 요청
 async function onSumReq(meeting) {
   if (!meeting || !meeting.transcription || meeting.transcription.trim() === '') {
-  console.warn('프: App - 요약 텍스트 없음');
+    console.warn('프: App - 요약 텍스트 없음');
     return;
   }
+
+  // 먼저 로컬(IndexedDB)에 캐시된 요약이 있는지 확인
+  const cached = records.value.find(r => r.id === meeting.id);
+  if (cached && cached.summary && String(cached.summary).trim() !== '') {
+    sumText.value = cached.summary;
+    showSum.value = true;
+    return;
+  }
+
+  // 캐시가 없으면 서버로 요청
   isSum.value = true;
   sumMeetId.value = meeting.id;
   sumText.value = '';
@@ -92,10 +102,17 @@ async function onSumReq(meeting) {
     const data = await response.json();
     sumText.value = data.summary;
     showSum.value = true;
-  console.log('프: App - 요약 완료');
+    console.log('프: App - 요약 완료');
+
+    // 받은 요약을 해당 레코드에 저장해서 다음에 재사용하도록 함
+    try {
+      updateRecSummary({ id: meeting.id, summary: data.summary });
+    } catch (e) {
+      console.warn('프: App - 요약 저장 실패', e);
+    }
 
   } catch (error) {
-  console.error('프: App - 요약 오류:', error);
+    console.error('프: App - 요약 오류:', error);
     sumText.value = `요약 실패: ${error.message}`;
     showSum.value = true;
   } finally {
