@@ -179,5 +179,3 @@ export function useRecordings({ uploadToServer = true } = {}) {
 
 // 이전 버전과의 호환성을 위해 useRecord로도 export
 export { useRecordings as useRecord };
-
-export default { useRecordings };

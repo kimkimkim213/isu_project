@@ -421,7 +421,7 @@ function stopMeter() {
 }
 
 .record-button {
-  position: 뮤;
+  position: absolute;
   width: 200px;
   height: 200px;
   border: 1px solid #ccc;

@@ -3,6 +3,7 @@ const cors = require('cors');
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');//전사본 요약용 API
 const { SpeechClient } = require('@google-cloud/speech');//음성인식용 API
+const { GoogleAuth } = require('google-auth-library'); // for constructing auth client from service account JSON
 
 const path = require('path');
 const fs = require('fs');
@@ -24,6 +25,33 @@ if (!process.env.GOOGLE_API_KEY || !process.env.GOOGLE_APPLICATION_CREDENTIALS) 
   require('dotenv').config({ path: path.join(__dirname, 'fe_isu', '.env') });
 }
 
+// GOOGLE_APPLICATION_CREDENTIALS가 .env에 상대경로로 설정되어 있을 수 있으므로
+// 실행 디렉터리에 따라 잘못 해석되는 것을 막기 위해 절대 경로로 정규화합니다.
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  try {
+    // Sanitize: remove surrounding quotes and whitespace that may come from .env values
+    let gac = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    gac = String(gac).trim();
+    if ((gac.startsWith('"') && gac.endsWith('"')) || (gac.startsWith("'") && gac.endsWith("'"))) {
+      gac = gac.slice(1, -1).trim();
+    }
+    // Remove accidental leading/trailing quotes leftover
+    gac = gac.replace(/^['"]+|['"]+$/g, '').trim();
+
+    // Resolve relative paths against this file's directory; leave absolute paths as-is
+    if (gac.length > 0) {
+      if (!path.isAbsolute(gac)) {
+        process.env.GOOGLE_APPLICATION_CREDENTIALS = path.resolve(__dirname, gac);
+      } else {
+        process.env.GOOGLE_APPLICATION_CREDENTIALS = gac;
+      }
+      console.log('백: GOOGLE_APPLICATION_CREDENTIALS normalized to', process.env.GOOGLE_APPLICATION_CREDENTIALS);
+    }
+  } catch (e) {
+    console.warn('백: GOOGLE_APPLICATION_CREDENTIALS 정규화 실패(무시):', e && e.message ? e.message : e);
+  }
+}
+
 // PORT 번호 설정 - 기본값 3001
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 
@@ -41,7 +69,86 @@ try {
   genAI = null;
 }
 try {
-  speechClient = new SpeechClient();//서비스 계정 키 파일 설정
+  // 서비스 계정 인증 방식 처리
+  // 우선: 환경변수로 제공된 JSON (base64 또는 raw JSON)을 사용해 credentials 객체를 직접 전달하면
+  // 내부적으로 deprecated 메서드를 사용하지 않고 JWT 생성자가 사용됩니다.
+  let created = false;
+  if (process.env.GOOGLE_CREDENTIALS_B64 || process.env.GOOGLE_CREDENTIALS_JSON) {
+    try {
+      const raw = process.env.GOOGLE_CREDENTIALS_B64
+        ? Buffer.from(process.env.GOOGLE_CREDENTIALS_B64, 'base64').toString('utf8')
+        : process.env.GOOGLE_CREDENTIALS_JSON;
+      const creds = JSON.parse(raw);
+      if (creds && creds.client_email && creds.private_key) {
+        // Create a GoogleAuth instance with the parsed credentials and pass it via `auth`.
+        // GoogleAuth implements the methods google-gax expects (e.g. getUniverseDomain).
+        const googleAuth = new GoogleAuth({
+          credentials: creds,
+          scopes: ['https://www.googleapis.com/auth/cloud-platform']
+        });
+        speechClient = new SpeechClient({ auth: googleAuth });
+        console.log('백: SpeechClient initialized from env JSON credentials (auth=GoogleAuth)');
+        created = true;
+      } else {
+        console.warn('백: env에 제공된 JSON이 유효한 서비스 계정 형태가 아닙니다. client_email/private_key 확인 필요');
+      }
+    } catch (e) {
+      console.warn('백: env JSON으로 SpeechClient 초기화 실패:', e && e.message ? e.message : e);
+    }
+  }
+  // 둘째: GOOGLE_APPLICATION_CREDENTIALS에 키 파일 경로가 있으면 keyFilename으로 전달
+  if (!created && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    try {
+      const keyPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+      if (fs.existsSync(keyPath) && fs.statSync(keyPath).isFile()) {
+        try {
+          // 파일을 직접 읽어 credentials 객체로 전달하면 deprecated 경고를 피할 수 있음
+          const raw = fs.readFileSync(keyPath, { encoding: 'utf8' });
+          const creds = JSON.parse(raw);
+          if (creds && creds.client_email && creds.private_key) {
+            // Create GoogleAuth instance from parsed key file and pass to client to avoid deprecated APIs
+            const googleAuth = new GoogleAuth({
+              credentials: creds,
+              scopes: ['https://www.googleapis.com/auth/cloud-platform']
+            });
+            speechClient = new SpeechClient({ auth: googleAuth });
+            console.log('백: SpeechClient initialized from key file (auth=GoogleAuth):', keyPath);
+            created = true;
+          } else {
+            // 포맷이 예상과 다르면 GoogleAuth에 keyFilename을 넘겨 auth 인스턴스를 생성한 뒤 전달
+            console.warn('백: key file parsed but missing client_email/private_key - falling back to GoogleAuth with keyFilename');
+            try {
+              const googleAuthFallback = new GoogleAuth({ keyFilename: keyPath, scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
+              speechClient = new SpeechClient({ auth: googleAuthFallback });
+              console.log('백: SpeechClient initialized from key file (auth=GoogleAuth via keyFilename):', keyPath);
+              created = true;
+            } catch (e2) {
+              console.warn('백: GoogleAuth(keyFilename) 생성 실패, 계속 진행:', e2 && e2.message ? e2.message : e2);
+            }
+          }
+        } catch (e) {
+          console.warn('백: key file을 JSON으로 읽는 중 오류, GoogleAuth(keyFilename)으로 시도:', e && e.message ? e.message : e);
+          try {
+            const googleAuthFallback = new GoogleAuth({ keyFilename: keyPath, scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
+            speechClient = new SpeechClient({ auth: googleAuthFallback });
+            console.log('백: SpeechClient initialized from key file (auth=GoogleAuth via keyFilename):', keyPath);
+            created = true;
+          } catch (e2) {
+            console.warn('백: GoogleAuth(keyFilename) 생성 실패(무시):', e2 && e2.message ? e2.message : e2);
+          }
+        }
+      } else {
+        console.warn('백: GOOGLE_APPLICATION_CREDENTIALS에 지정된 파일을 찾을 수 없음:', keyPath);
+      }
+    } catch (e) {
+      console.warn('백: keyFilename으로 SpeechClient 초기화 중 오류(무시):', e && e.message ? e.message : e);
+    }
+  }
+  // 셋째: 아무 것도 없으면 ADC 또는 기본 동작으로 시도
+  if (!created) {
+    speechClient = new SpeechClient();
+    console.log('백: SpeechClient initialized using Application Default Credentials (ADC)');
+  }
 } catch (e) {
   console.error('백: SpeechClient 초기화 실패:', e && e.message ? e.message : e); //키 파일 설정 실패
   speechClient = null;
