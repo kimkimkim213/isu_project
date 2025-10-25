@@ -659,12 +659,8 @@ h2 {
   font-size: 1.1em;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.2s, transform 0.1s;
+  transition: background-color 0.2s ease;
   color: white;
-}
-
-.prompt-button:hover {
-    transform: translateY(-2px);
 }
 
 .prompt-button.download {
