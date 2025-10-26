@@ -3,7 +3,6 @@ const cors = require('cors');
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');//전사본 요약용 API
 const { SpeechClient } = require('@google-cloud/speech');//음성인식용 API
-const { GoogleAuth, JWT } = require('google-auth-library'); // for constructing auth client from service account JSON
 
 const path = require('path');
 const fs = require('fs');
@@ -19,24 +18,21 @@ process.on('unhandledRejection', (reason, p) => {
   console.error('백: unhandledRejection 발생 - reason:', reason, 'promise:', p);
 });//비동기 처리중 예외 발생시
 
-//환경변수 로드 및 확인
+//환경변수 로드 및 확인 (최소한으로 로드)
 require('dotenv').config();
-if (!process.env.GOOGLE_API_KEY || !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-  require('dotenv').config({ path: path.join(__dirname, 'fe_isu', '.env') });
+// 로컬 fe_isu/.env에 추가 설정이 있을 수 있으므로, GOOGLE_API_KEY가 비어있을 때만 보조 로드
+const feEnvPath = path.join(__dirname, 'fe_isu', '.env');
+if (!process.env.GOOGLE_API_KEY && fs.existsSync(feEnvPath)) {
+  require('dotenv').config({ path: feEnvPath });
 }
 
-// GOOGLE_APPLICATION_CREDENTIALS가 .env에 상대경로로 설정되어 있을 수 있으므로
-// 실행 디렉터리에 따라 잘못 해석되는 것을 막기 위해 __dirname 기준으로 절대 경로로 정규화합니다.
+// GOOGLE_APPLICATION_CREDENTIALS가 상대경로로 설정되어 있을 수 있으므로 __dirname 기준으로 절대경로로 정규화
 if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-  try {
-    const gac = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-    if (gac && !path.isAbsolute(gac)) {
-      process.env.GOOGLE_APPLICATION_CREDENTIALS = path.resolve(__dirname, gac);
-    }
-    console.log('백: GOOGLE_APPLICATION_CREDENTIALS normalized to', process.env.GOOGLE_APPLICATION_CREDENTIALS);
-  } catch (e) {
-    console.warn('백: GOOGLE_APPLICATION_CREDENTIALS 정규화 실패(무시):', e && e.message ? e.message : e);
+  const gac = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (gac && !path.isAbsolute(gac)) {
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = path.resolve(__dirname, gac);
   }
+  console.log('백: GOOGLE_APPLICATION_CREDENTIALS normalized to', process.env.GOOGLE_APPLICATION_CREDENTIALS);
 }
 
 // GOOGLE_API_KEY는 .env에서 직접 설정되어야 합니다. 필요하면 수동으로 값을 확인하세요.
@@ -44,114 +40,39 @@ if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
 // PORT 번호 설정 - 기본값 3001
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 
-// 전역 클라이언트 생성
+// 전역 클라이언트 생성 (간단하게)
 let genAI = null;
 let speechClient = null;
-try {
-  if (process.env.GOOGLE_API_KEY) {
-    genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY); // API 키 있음
-  } else {
-    console.warn('백: 환경변수(GOOGLE_API_KEY) 설정되지 않음 - 요약 기능 사용 불가'); //API 키 없음
+
+// genAI 초기화 (간단한 실패 로직)
+if (process.env.GOOGLE_API_KEY) {
+  try {
+    genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
+  } catch (err) {
+    console.error('백: genAI 초기화 오류:', err && err.message ? err.message : err);
+    genAI = null;
   }
-} catch (e) {
-  console.error('백: genAI 초기화 실패:', e && e.message ? e.message : e);//API 키 있는데 오류남
-  genAI = null;
+} else {
+  console.warn('백: 환경변수(GOOGLE_API_KEY) 설정되지 않음 - 요약 기능 사용 불가');
 }
-try {
-  // 서비스 계정 인증 방식 처리
-  // 우선: 환경변수로 제공된 JSON (base64 또는 raw JSON)을 사용해 credentials 객체를 직접 전달하면
-  // 내부적으로 deprecated 메서드를 사용하지 않고 JWT 생성자가 사용됩니다.
-  let created = false;
-  if (process.env.GOOGLE_CREDENTIALS_B64 || process.env.GOOGLE_CREDENTIALS_JSON) {
-    try {
-      const raw = process.env.GOOGLE_CREDENTIALS_B64
-        ? Buffer.from(process.env.GOOGLE_CREDENTIALS_B64, 'base64').toString('utf8')
-        : process.env.GOOGLE_CREDENTIALS_JSON;
-      const creds = JSON.parse(raw);
-      if (creds && creds.client_email && creds.private_key) {
-        // Construct a JWT client directly to avoid deprecated fromJSON/from-credentials usage.
-        const jwtClient = new JWT({
-          email: creds.client_email,
-          key: creds.private_key,
-          scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-        });
-        speechClient = new SpeechClient({ auth: jwtClient });
-        console.log('백: SpeechClient initialized from env JSON credentials (auth=JWT)');
-        created = true;
-      } else {
-        console.warn('백: env에 제공된 JSON이 유효한 서비스 계정 형태가 아닙니다. client_email/private_key 확인 필요');
-      }
-    } catch (e) {
-      console.warn('백: env JSON으로 SpeechClient 초기화 실패:', e && e.message ? e.message : e);
+
+// SpeechClient 생성 시도
+function createSpeechClient() {
+  try {
+    const keyPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    if (keyPath && fs.existsSync(keyPath) && fs.statSync(keyPath).isFile()) {
+      console.log('백: SpeechClient initialized from keyFilename:', keyPath);
+      return new SpeechClient({ keyFilename: keyPath });
     }
-  }
-  // 둘째: GOOGLE_APPLICATION_CREDENTIALS에 키 파일 경로가 있으면 keyFilename으로 전달
-  if (!created && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-    try {
-      const keyPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-      if (fs.existsSync(keyPath) && fs.statSync(keyPath).isFile()) {
-        try {
-          // 파일을 직접 읽어 credentials 객체로 전달하면 deprecated 경고를 피할 수 있음
-          const raw = fs.readFileSync(keyPath, { encoding: 'utf8' });
-          const creds = JSON.parse(raw);
-          if (creds && creds.client_email && creds.private_key) {
-            // Create a JWT client from parsed key file to avoid deprecated APIs
-            const jwtClient = new JWT({
-              email: creds.client_email,
-              key: creds.private_key,
-              scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-            });
-            speechClient = new SpeechClient({ auth: jwtClient });
-            console.log('백: SpeechClient initialized from key file (auth=JWT):', keyPath);
-            created = true;
-          } else {
-            // 포맷이 예상과 다르면 GoogleAuth에 keyFilename을 넘겨 auth 인스턴스를 생성한 뒤 전달
-            console.warn(
-              '백: key file parsed but missing client_email/private_key - falling back to',
-              'GoogleAuth with keyFilename',
-            );
-            try {
-              const googleAuthFallback = new GoogleAuth({
-                keyFilename: keyPath,
-                scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-              });
-              speechClient = new SpeechClient({ auth: googleAuthFallback });
-              console.log('백: SpeechClient initialized from key file (auth=GoogleAuth via keyFilename):', keyPath);
-              created = true;
-            } catch (e2) {
-              console.warn('백: GoogleAuth(keyFilename) 생성 실패, 계속 진행:', e2 && e2.message ? e2.message : e2);
-            }
-          }
-        } catch (e) {
-          console.warn('백: key file을 JSON으로 읽는 중 오류, GoogleAuth(keyFilename)으로 시도:', e && e.message ? e.message : e);
-          try {
-            const googleAuthFallback = new GoogleAuth({
-              keyFilename: keyPath,
-              scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-            });
-            speechClient = new SpeechClient({ auth: googleAuthFallback });
-            console.log('백: SpeechClient initialized from key file (auth=GoogleAuth via keyFilename):', keyPath);
-            created = true;
-          } catch (e2) {
-            console.warn('백: GoogleAuth(keyFilename) 생성 실패(무시):', e2 && e2.message ? e2.message : e2);
-          }
-        }
-      } else {
-        console.warn('백: GOOGLE_APPLICATION_CREDENTIALS에 지정된 파일을 찾을 수 없음:', keyPath);
-      }
-    } catch (e) {
-      console.warn('백: keyFilename으로 SpeechClient 초기화 중 오류(무시):', e && e.message ? e.message : e);
-    }
-  }
-  // 셋째: 아무 것도 없으면 ADC 또는 기본 동작으로 시도
-  if (!created) {
-    speechClient = new SpeechClient();
     console.log('백: SpeechClient initialized using Application Default Credentials (ADC)');
+    return new SpeechClient();
+  } catch (e) {
+    console.error('백: SpeechClient 생성 중 오류:', e && e.message ? e.message : e);
+    return null;
   }
-} catch (e) {
-  console.error('백: SpeechClient 초기화 실패:', e && e.message ? e.message : e); //키 파일 설정 실패
-  speechClient = null;
 }
+
+speechClient = createSpeechClient();
 
 app.use(cors());
 
@@ -214,117 +135,59 @@ app.post('/api/summarize', async (req, res) => {
 
 // 음성 전사 처리
 app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
+  if (!speechClient) return res.status(500).json({ error: '음성인식 클라이언트 초기화되지 않음' });
+  if (!req.file) return res.status(400).json({ error: '오디오 파일 필요' });
+
+  const startTime = Date.now();
+  const fp = req.file.path;
+  const mimeType = req.file.mimetype || 'audio/webm';
+
   try {
-    // 전역 SpeechClient 사용 여부 확인
-    if (!speechClient) {
-      return res.status(500).json({ error: '음성인식 클라이언트 초기화되지 않음' });
-    }
-    const startTime = Date.now();
-    // 기본 메타데이터
-    const contentType = req.headers['content-type'] || '';
-    const contentLength = req.get('content-length') || '';
-    console.log('백: 전사 요청 수신 - 타입:', contentType, '길이:', contentLength);
+    const audioBuffer = await fs.promises.readFile(fp);
+    const sampleRate = req.body.sampleRate ? Number(req.body.sampleRate) : 16000;
 
-    let audioBuffer = null;
-    let sampleRate = null;
-    let mimeType = null;
+    console.log('백: 전사 요청 수신 - 파일:', req.file.originalname, '크기:', audioBuffer.length, '샘플레이트:', sampleRate, 'MIME:', mimeType);
 
-    if (!req.file) {
-      return res.status(400).json({ error: '오디오 파일 필요' });
-    }
-
-      const fp = req.file.path;
-      mimeType = req.file.mimetype || 'audio/webm';
-      try {
-        // 파일 읽기
-        audioBuffer = await fs.promises.readFile(fp);
-        console.log('백: 업로드된 파일 읽음:', fp);
-        console.log(
-          '백: 파일 메타 - originalname:',
-          req.file.originalname,
-          '타입:',
-          mimeType,
-          '크기:',
-          audioBuffer.length,
-        );
-        try {
-          console.log('백: 파일 바이트(선두 64 바이트, hex):', audioBuffer.slice(0, 64).toString('hex'));
-        } catch (e) {
-          console.warn('백: 파일 바이트 출력 실패(무시):', e && e.message ? e.message : e);
-        }
-      } catch (e) {
-        console.error('백: 업로드 파일 읽기 오류:', e);
-        return res.status(500).json({ error: '파일 처리 실패', details: e.message });
-      } finally {
-        // 임시 파일 삭제
-        fs.promises.unlink(fp).catch(err => console.warn('백: 업로드 임시파일 삭제 실패:', err && err.message ? err.message : err));
-      }
-      sampleRate = req.body.sampleRate ? Number(req.body.sampleRate) : 16000;
-
-    console.log('백: 수신된 오디오 버퍼 크기:', audioBuffer.length, '바이트');
-    console.log(`백: 수신된 오디오 속성: 샘플레이트=${sampleRate}, MIME=${mimeType}`);
-
-  const audio = { content: audioBuffer.toString('base64') };
-
-  // 인코딩,샘플레이트 설정
-  let encoding = 'ENCODING_UNSPECIFIED';
-  if (mimeType && mimeType.includes('webm')) {
-    encoding = 'WEBM_OPUS';
-  } else if (mimeType && mimeType.includes('wav')) {
-  // stt api의 경우 wav는 LINEAR16으로 처리
-  encoding = 'LINEAR16';
-  }
-
-  // sampleRate 숫자 설정 - 기본 16000
-  if (!sampleRate || typeof sampleRate !== 'number' || Number.isNaN(sampleRate)) {
-    sampleRate = 16000;
-  }
+    const audio = { content: audioBuffer.toString('base64') };
+    let encoding = 'ENCODING_UNSPECIFIED';
+    if (mimeType.includes('webm')) encoding = 'WEBM_OPUS';
+    else if (mimeType.includes('wav')) encoding = 'LINEAR16';
 
     const config = {
-      encoding: encoding,
-      sampleRateHertz: sampleRate,
+      encoding,
+      sampleRateHertz: sampleRate || 16000,
       languageCode: 'ko-KR',
       enableSpeakerDiarization: true,
-      diarizationSpeakerCount: 2
+      diarizationSpeakerCount: 'auto',
     };
 
-    console.log('백: Google 전송 설정:', JSON.stringify(config, null, 2));
     const callStart = Date.now();
-    console.log('백:음성 전사 처리시작, 크기:', audioBuffer.length, '바이트');
-    const [operation] = await speechClient.longRunningRecognize({ audio, config });//전사 처리 요청
+    const [operation] = await speechClient.longRunningRecognize({ audio, config });
     const [response] = await operation.promise();
-    // Google STT가 빈 응답을 반환하는 경우
+
     if (!response || !response.results || response.results.length === 0) {
       console.warn('백: STT가 결과를 반환하지 않음');
       return res.status(502).json({ error: '음성 인식 결과가 없습니다. 다시 시도하세요.' });
     }
-    const callDur = Date.now() - callStart;//STT API 호출 시간 표시
-    console.log('백: Google 음성 전사 처리 완료 (ms):', callDur);
-  try {
-    console.log(
-      '백: Google STT 응답 요약:',
-      JSON.stringify(response, ['results', 'alternatives', 'transcript'], 2).slice(0, 2000),
-    );
-  } catch (e) {
-    console.warn('백: STT 응답 요약 출력 실패(무시):', e && e.message ? e.message : e);
-  }
 
-  const transcription = (response.results || [])
-      .map(result => (result.alternatives && result.alternatives[0]) ? result.alternatives[0].transcript : '')
-      .filter(t => t)//빈 문자열 제거
-      .join('\n'); //줄바꿈으로 구분된 전체 전사 텍스트
-    //전사 결과가 비어있는 경우 
+    const transcription = (response.results || [])
+      .map(r => (r.alternatives && r.alternatives[0]) ? r.alternatives[0].transcript : '')
+      .filter(Boolean)
+      .join('\n');
+
     if (!transcription || transcription.trim().length === 0) {
       console.warn('백: STT 결과가 비어 있음');
       return res.status(502).json({ error: '음성 인식 결과가 없습니다. 다시 시도하세요.' });
     }
-    const totalDur = Date.now() - startTime;
-    console.log('백: 전사 완료 — 문자 길이:', transcription.length, '처리시간(ms):', totalDur);
-    //전사 결과 반환
-    res.json({ transcription });
+
+    console.log('백: 전사 완료 — 문자 길이:', transcription.length, '처리시간(ms):', Date.now() - startTime);
+    return res.json({ transcription });
   } catch (error) {
     console.error('백: 전사 오류:', error);
-    res.status(500).json({ error: '전사 실패', details: error.message });
+    return res.status(500).json({ error: '전사 실패', details: error && error.message ? error.message : String(error) });
+  } finally {
+    // 임시 파일은 항상 시도해서 삭제
+    fs.promises.unlink(fp).catch(err => console.warn('백: 업로드 임시파일 삭제 실패:', err && err.message ? err.message : err));
   }
 });
 
@@ -339,6 +202,15 @@ app.post('/api/upload', upload.single('audio'), (req, res) => {
     console.error('백: 업로드 오류:', e);
     res.status(500).json({ error: '업로드 실패', details: e.message });
   }
+});
+
+// Multer 전용 에러 핸들러: 업로드 관련 에러를 명확히 처리
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    console.error('백: Multer 오류:', err.code, err.message);
+    return res.status(400).json({ error: '파일 업로드 오류', code: err.code, message: err.message });
+  }
+  next(err);
 });
 
 // 서버 시작 - 포트가 사용 중일 때 자동으로 다음 포트로 재시도

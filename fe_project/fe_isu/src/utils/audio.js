@@ -23,21 +23,21 @@ export async function blobToB64(blob) {
 // Float32Array를 16-bit PCM WAV로 인코딩
 export function encodeWav(samples, sampleRate) {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
-  const view = new DataView(buffer);
+  const view = new DataView(buffer); // WAV 헤더 작성
 
-  /* RIFF identifier */ writeString(view, 0, 'RIFF');
-  /* file length */ view.setUint32(4, 36 + samples.length * 2, true);
-  /* RIFF type */ writeString(view, 8, 'WAVE');
-  /* format chunk identifier */ writeString(view, 12, 'fmt ');
-  /* format chunk length */ view.setUint32(16, 16, true);
-  /* sample format (raw) */ view.setUint16(20, 1, true);
-  /* channel count */ view.setUint16(22, 1, true);
-  /* sample rate */ view.setUint32(24, sampleRate, true);
-  /* byte rate (sampleRate * blockAlign) */ view.setUint32(28, sampleRate * 2, true);
-  /* block align (channelCount * bytesPerSample) */ view.setUint16(32, 2, true);
-  /* bits per sample */ view.setUint16(34, 16, true);
-  /* data chunk identifier */ writeString(view, 36, 'data');
-  /* data chunk length */ view.setUint32(40, samples.length * 2, true);
+  writeString(view, 0, 'RIFF'); // 청크 ID
+  view.setUint32(4, 36 + samples.length * 2, true); // 청크 크기
+  writeString(view, 8, 'WAVE'); // 포맷 청크 ID
+  writeString(view, 12, 'fmt '); // 서브청크1 ID
+  view.setUint32(16, 16, true); // 서브청크1 크기
+  view.setUint16(20, 1, true); // 오디오 포맷 (1 = PCM)
+  view.setUint16(22, 1, true); // 채널 수
+  view.setUint32(24, sampleRate, true); // 샘플링 레이트
+  view.setUint32(28, sampleRate * 2, true); // 바이트율
+  view.setUint16(32, 2, true);  // 블록 정렬
+  view.setUint16(34, 16, true); // 비트 깊이
+  writeString(view, 36, 'data'); // 서브청크2 ID
+  view.setUint32(40, samples.length * 2, true); // 서브청크2 크기
 
   // PCM 샘플 작성
   floatTo16BitPCM(view, 44, samples);
@@ -50,9 +50,9 @@ export async function to16kWav(blob) {
   try {
     const arrayBuffer = await blob.arrayBuffer();
     const decodeCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const audioBuffer = await decodeCtx.decodeAudioData(arrayBuffer);
+    const audioBuffer = await decodeCtx.decodeAudioData(arrayBuffer);// 디코딩
     
-    const targetSampleRate = 16000;
+    const targetSampleRate = 16000; // 목표 샘플링 레이트
     const numChannels = 1;
     const length = Math.ceil(audioBuffer.duration * targetSampleRate);
     const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
@@ -129,7 +129,7 @@ export async function sendToSTT(audioBlob, sampleRate, mimeType) {
     form.append('sampleRate', String(finalSampleRate));
     form.append('mimeType', finalMimeType);
     
-    const res = await fetch('http://localhost:3001/api/transcribe', {
+    const res = await fetch('http://localhost:3001/api/transcribe', { // STT API 엔드포인트
       method: 'POST',
       body: form,
     });

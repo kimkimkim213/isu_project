@@ -1,5 +1,5 @@
 import { ref, watch, onMounted } from 'vue';
-import { getAll, put, del, base64ToBlob } from '@/utils';
+import { getAll, put, del, base64ToBlob, blobToDataURL } from '@/utils';
 
 // 새 ID 생성
 function newId() {
@@ -29,8 +29,8 @@ async function migrateFromLocalStorage(records) {
     records.value.push(rec);
 
     try {
-      // Blob을 그대로 IndexedDB에 저장하도록 변경 (dataURL 변환 제거)
-      await put({ ...rec, audioBlob: blob, audioType: item.audioType });
+      const dataUrl = await blobToDataURL(blob);
+      await put({ ...rec, audioBlob: dataUrl, audioType: item.audioType });
     } catch (e) {
       console.warn('프: useRecordings - 마이그레이션 중 IDB 저장 실패', e);
     }
@@ -44,15 +44,17 @@ async function migrateFromLocalStorage(records) {
   console.log('프: useRecordings - 마이그레이션 완료');
 }
 
-// 서버에 오디오 업로드 (부수효과 없이 blob과 filename만 받아 URL 반환)
-async function uploadAudio(blob, filename) {
+// 서버에 오디오 업로드
+async function uploadAudio(rec) {
   try {
     const form = new FormData();
-    form.append('audio', blob, filename || 'recording.webm');
+    form.append('audio', rec.audioBlob, rec.filename || 'recording.webm');
     const resp = await fetch('/api/upload', { method: 'POST', body: form });
 
-    if (resp && resp.ok) {
+    if (resp.ok) {
       const body = await resp.json();
+      rec.audioUrl = body.url;
+      rec.audioBlob = null; // Blob 대신 URL 사용
       console.log('프: useRecordings - 업로드 성공. URL:', body.url);
       return body.url;
     }
@@ -64,26 +66,14 @@ async function uploadAudio(blob, filename) {
 
 export function useRecordings({ uploadToServer = true } = {}) {
   const records = ref([]);
-  // 로드/동기화 중 watch로 인한 불필요한 저장을 일시중단하기 위한 플래그
-  let suspendSave = false;
   const UP_SRV = uploadToServer;
 
   onMounted(async () => {
-    // 데이터 로드 중에 자동 저장을 중단
-    suspendSave = true;
     await loadStore();
-    suspendSave = false;
   });
 
   watch(records, async (newRecs) => {
-    if (suspendSave) return;
-    // 저장 중 중첩 호출 방지
-    suspendSave = true;
-    try {
-      await saveRecs(newRecs);
-    } finally {
-      suspendSave = false;
-    }
+    await saveRecs(newRecs);
   }, { deep: true });
 
   // IndexedDB에서 레코드 로드
@@ -91,15 +81,14 @@ export function useRecordings({ uploadToServer = true } = {}) {
     try {
       const idbRecs = await getAll();
       if (Array.isArray(idbRecs) && idbRecs.length > 0) {
-        // 한 번에 매핑하여 records에 할당 (여러번 push로 인한 중복 저장 방지)
-        const mapped = idbRecs.map(item => {
+        idbRecs.forEach(item => {
           let audioData = item.audioBlob;
-          // data: URL이면 Blob으로 변환
+          // b64 문자열이면 Blob으로 변환
           if (typeof audioData === 'string' && audioData.startsWith('data:')) {
             audioData = base64ToBlob(audioData, item.audioType || 'audio/webm');
           }
-
-          return {
+          
+          records.value.push({
             id: item.id || newId(),
             timestamp: item.timestamp,
             audioBlob: (typeof audioData === 'string' && audioData.startsWith('http')) ? null : audioData,
@@ -107,10 +96,8 @@ export function useRecordings({ uploadToServer = true } = {}) {
             filename: item.filename,
             transcription: item.transcription || '',
             summary: item.summary || ''
-          };
+          });
         });
-
-        records.value = mapped;
         return;
       }
       // IDB에 데이터가 없으면 localStorage에서 마이그레이션 시도
@@ -123,24 +110,23 @@ export function useRecordings({ uploadToServer = true } = {}) {
   // 변경된 레코드를 IndexedDB에 저장
   async function saveRecs(newRecs) {
     try {
-      const puts = [];
       for (const rec of newRecs) {
         let storeAudio = rec.audioBlob;
         let audioType = null;
 
         // 서버 업로드 옵션 활성화 시 Blob 업로드
         if (UP_SRV && rec.audioBlob instanceof Blob && !rec.audioUrl) {
-          const uploadedUrl = await uploadAudio(rec.audioBlob, rec.filename);
+          const uploadedUrl = await uploadAudio(rec);
           if (uploadedUrl) {
             storeAudio = uploadedUrl;
-            // 로컬 상태도 갱신하되, watch가 suspend 되어있으면 무한루프 방지
-            rec.audioUrl = uploadedUrl;
-            rec.audioBlob = null;
           }
         } else if (rec.audioBlob instanceof Blob) {
-          // Blob을 그대로 저장하도록 변경
-          storeAudio = rec.audioBlob;
-          audioType = rec.audioBlob.type || null;
+          try {
+            storeAudio = await blobToDataURL(rec.audioBlob);
+            audioType = rec.audioBlob.type || null;
+          } catch (e) {
+            storeAudio = null;
+          }
         }
 
         const storeObj = {
@@ -152,9 +138,8 @@ export function useRecordings({ uploadToServer = true } = {}) {
           audioBlob: storeAudio,
           audioType
         };
-        puts.push(put(storeObj));
+        await put(storeObj);
       }
-      await Promise.all(puts);
     } catch (e) {
       console.error('프: useRecordings - saveRecs 실패', e);
     }
@@ -177,10 +162,10 @@ export function useRecordings({ uploadToServer = true } = {}) {
   }
 
   // 녹음 삭제
-  async function delRec(id) {
+  function delRec(id) {
     records.value = records.value.filter(r => r.id !== id);
     try {
-      await del(id);
+      del(id).catch(() => {});
     } catch (e) {
       console.warn('프: useRecordings - del 실패', e);
     }
@@ -200,6 +185,3 @@ export function useRecordings({ uploadToServer = true } = {}) {
 
   return { records, addRec, delRec, updateRecName, updateRecSummary };
 }
-
-// 이전 버전과의 호환성을 위해 useRecord로도 export
-export { useRecordings as useRecord };

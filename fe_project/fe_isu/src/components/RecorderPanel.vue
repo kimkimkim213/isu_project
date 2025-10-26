@@ -62,8 +62,8 @@ const showNamePrompt = ref(false);
 const filenameInput = ref("");
 const isRec = ref(false);
 const recorder = ref(null); // 소형 컨트롤러 {state, stop}
-const chunks = ref([]); // 레거시 호환용(주 사용 아님)
-let pcmChunks = []; // worklet/scriptprocessor에서 수집된 Float32Array
+const chunks = ref([]); // 레거시 호환용
+let pcmChunks = []; // 캡처한 PCM 청크
 const lastWavBlob = ref(null);
 const emit = defineEmits(["recording-finished"]);
 
@@ -73,7 +73,7 @@ const isTranscribing = ref(false); // 텍스트 변환 중 상태
 const mimeType = ref(''); // 녹음 MIME 타입
 const sampleRate = ref(0); // 녹음 샘플링 레이트
 
-let stream = null, analyser = null, dataArray = null, audioContext = null, animationFrameId = null, workletNode = null, scriptNode = null, sourceNode = null;
+let stream = null, analyser = null, dataArray = null, audioContext = null, animationFrameId = null, workletNode = null, sourceNode = null;
 
 // 캡처 노드 초기화: worklet 우선, 없으면 script processor로 폴백
 function initCapture(s, context) {
@@ -102,20 +102,8 @@ function initCapture(s, context) {
     }
   }
 
-  // ScriptProcessor 폴백
-  const bufferSize = 4096;
-  const channels = 1;
-  scriptNode = context.createScriptProcessor(bufferSize, channels, channels);
-  scriptNode.onaudioprocess = (e) => {
-    const input = e.inputBuffer.getChannelData(0);
-    pcmChunks.push(new Float32Array(input));
-  };
-  sourceNode.connect(scriptNode);
-  const silentGain = context.createGain();
-  silentGain.gain.value = 0;
-  scriptNode.connect(silentGain);
-  silentGain.connect(context.destination);
-  console.log('프: RecorderPanel - ScriptProcessor 사용, 실시간 PCM 캡처 시작');
+  // AudioWorklet이 실패하거나 지원되지 않으면 캡처를 시작하지 않습니다.
+  console.warn('프: RecorderPanel - AudioWorklet 사용 불가 또는 초기화 실패 시 캡처를 시작하지 않습니다. 브라우저가 AudioWorklet을 지원하는지 확인하세요.');
 }
 
 // 캡처 노드 정리 및 스트림 정지
@@ -126,10 +114,7 @@ function cleanupCapture() {
       try { workletNode.disconnect(); } catch (e) { console.warn('프: RecorderPanel - worklet disconnect 에러(무시):', e); }
       workletNode = null;
     }
-    if (scriptNode) {
-      try { scriptNode.disconnect(); } catch (e) { console.warn('프: RecorderPanel - scriptNode disconnect 에러(무시):', e); }
-      scriptNode = null;
-    }
+    // scriptNode 제거됨: workletNode만 정리
     if (sourceNode) {
       try { sourceNode.disconnect(); } catch (e) { console.warn('프: RecorderPanel - sourceNode disconnect 에러(무시):', e); }
       sourceNode = null;
@@ -193,8 +178,7 @@ async function toggleRec() {
       lastWavBlob.value = null;
   // 캡처 노드 일괄 초기화
   initCapture(stream, audioContext);
-
-      // create a small controller-like object to mimic MediaRecorder API used elsewhere
+  
       recorder.value = {
         state: 'recording',
         stop: () => stopRec()
@@ -217,8 +201,7 @@ async function stopRec() {
   try {
     if (recorder.value) recorder.value.state = 'inactive';
     // 노드 및 트랙 중지
-      // 캡처 노드 및 스트림 정리
-      cleanupCapture();
+      cleanupCapture();//노드 정리
 
     stopMeter();
 
