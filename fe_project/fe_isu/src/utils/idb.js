@@ -4,9 +4,17 @@ const DB_NAME = 'isu_recordings_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'recordings';
 
+// 캐시된 DB 인스턴스 및 열기 프라미스
+let cachedDB = null;
+let openPromise = null;
+
 function openDB() {
-  return new Promise((resolve, reject) => {
+  if (cachedDB) return Promise.resolve(cachedDB);
+  if (openPromise) return openPromise;
+
+  openPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
+
     req.onupgradeneeded = (event) => {
       const db = event.target.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
@@ -14,8 +22,27 @@ function openDB() {
         store.createIndex('timestamp', 'timestamp', { unique: false });
       }
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+
+    req.onsuccess = () => {
+      cachedDB = req.result;
+      // 다른 탭에서 버전 변경 시 안전하게 닫고 캐시를 무효화
+      cachedDB.onversionchange = () => {
+        try {
+          cachedDB.close();
+        } catch (e) {
+          // Ignore close errors from other contexts but log for debugging
+          // eslint-disable-next-line no-console
+          console.warn('fe_isu:idb - cachedDB.close() failed:', e && e.message ? e.message : e);
+        }
+        cachedDB = null;
+        openPromise = null;
+      };
+      resolve(cachedDB);
+    };
+    req.onerror = () => {
+      openPromise = null;
+      reject(req.error);
+    };
   });
 }
 

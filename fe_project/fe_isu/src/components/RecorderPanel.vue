@@ -5,16 +5,14 @@
       @click="onRecBtnClick"
     >
       <span
-        :class="['icon', { 'is-recording': isRec, 'shifted-active': showOpts }]
-        "
+        :class="['icon', { 'is-recording': isRec, 'options-active': showOpts }]"
         @click.stop="onIconClick"
       ></span>
-
-      <div v-if="showOpts && !showNamePrompt" class="options-container">
-        <button class="option-button" @click.stop="promptSave">녹음본 저장하고 종료하기</button>
-        <button class="option-button" @click.stop="discardRec">녹음본 저장하지 않고 종료하기</button>
-      </div>
     </button>
+    <div v-if="showOpts && !showNamePrompt" class="options-panel">
+      <button class="option-button" @click.stop="promptSave">녹음본 저장하고 종료하기</button>
+      <button class="option-button" @click.stop="discardRec">녹음본 저장하지 않고 종료하기</button>
+    </div>
 
     <p v-if="isRec && !showOpts && !showNamePrompt && !isTranscribing" class="recording-status-text">
       녹음중...
@@ -23,7 +21,7 @@
     <div class="volume-bar-container" v-if="isRec && !showOpts && !isTranscribing">
       <div class="volume-bar" :style="{ width: volume + '%' }"></div>
     </div>
-  <!-- 옵션·파일명 입력용 어두운 오버레이 -->
+  <!-- 옵션,파일명 입력용 어두운 오버레이 -->
     <div
       v-if="showOpts || showNamePrompt || showMsgModal || isTranscribing"
       class="dim-overlay"
@@ -455,46 +453,36 @@ function stopMeter() {
   height: 60px;
   background-color: #d50000;
 }
-
-.record-button.options-active {
-  width: 70vw;
-  height: 35vh;
-  max-width: 900px;
-  max-height: 450px;
-  border-radius: 16px;
-  background-color: #f0f0f0;
-  justify-content: flex-start;
-  padding: 0;
-  z-index: 10;
-  overflow: hidden;
+.record-button .icon .options-active {
+  opacity: 1;
+  transform: rotate(45deg);
+  pointer-events: auto;
 }
 
-.record-button.options-active .icon.shifted-active {
-  border-radius: 16px;
-  width: 100px;
-  height: 100px;
-  background-color: #ff1744;
-  margin-left: 25px;
-}
-
-
-.options-container {
+.options-panel {
+  position: absolute;
+  top: 50%;
+  animation: slideIn 0.3s forwards;
+  transition: all 0.3s ease;
+  left: calc(50% + 70px);
+  transform: translateY(-50%);
   display: flex;
   flex-direction: column;
   gap: 15px;
-  flex-grow: 1;
-  align-items: center;
-  justify-content: center;
   padding: 20px;
-  opacity: 0;
-  transform: translateX(20px);
-  transition: opacity 0.3s ease 0.1s, transform 0.3s ease 0.1s;
+  width: 350px;
+  max-width: 80vw;
   z-index: 11;
+  pointer-events: auto;
 }
 
-.record-button.options-active .options-container {
+
+
+.record-button.options-active {
   opacity: 1;
-  transform: translateX(0);
+  pointer-events: auto;
+
+  transform: rotate(45deg);
 }
 
 
@@ -532,6 +520,8 @@ function stopMeter() {
   border-radius: 8px;
   cursor: pointer;
   transition: background-color 0.2s ease, border-color 0.2s ease;
+  transform: translateX(25%);
+  animation: slideIn 0.3s forwards;
 }
 
 .option-button:hover {

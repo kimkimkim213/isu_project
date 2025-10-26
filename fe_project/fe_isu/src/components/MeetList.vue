@@ -187,8 +187,6 @@ export default {
     methods: {
     // 다운로드 이름 생성
       getAudioName(meet) {
-        // inside a character class only - and ] and ^ and \\
-        // need escaping; other backslashes were unnecessary
       const baseName = meet.title.replace(/[\\/:*?"<>|]/g, '_').replace(/\[/g, '_').replace(/\]/g, '_');
         return `${baseName}.webm`;
       },

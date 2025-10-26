@@ -3,7 +3,7 @@ const cors = require('cors');
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');//전사본 요약용 API
 const { SpeechClient } = require('@google-cloud/speech');//음성인식용 API
-const { GoogleAuth } = require('google-auth-library'); // for constructing auth client from service account JSON
+const { GoogleAuth, JWT } = require('google-auth-library'); // for constructing auth client from service account JSON
 
 const path = require('path');
 const fs = require('fs');
@@ -69,14 +69,14 @@ try {
         : process.env.GOOGLE_CREDENTIALS_JSON;
       const creds = JSON.parse(raw);
       if (creds && creds.client_email && creds.private_key) {
-        // Create a GoogleAuth instance with the parsed credentials and pass it via `auth`.
-        // GoogleAuth implements the methods google-gax expects (e.g. getUniverseDomain).
-        const googleAuth = new GoogleAuth({
-          credentials: creds,
-          scopes: ['https://www.googleapis.com/auth/cloud-platform']
+        // Construct a JWT client directly to avoid deprecated fromJSON/from-credentials usage.
+        const jwtClient = new JWT({
+          email: creds.client_email,
+          key: creds.private_key,
+          scopes: ['https://www.googleapis.com/auth/cloud-platform'],
         });
-        speechClient = new SpeechClient({ auth: googleAuth });
-        console.log('백: SpeechClient initialized from env JSON credentials (auth=GoogleAuth)');
+        speechClient = new SpeechClient({ auth: jwtClient });
+        console.log('백: SpeechClient initialized from env JSON credentials (auth=JWT)');
         created = true;
       } else {
         console.warn('백: env에 제공된 JSON이 유효한 서비스 계정 형태가 아닙니다. client_email/private_key 확인 필요');
@@ -95,19 +95,26 @@ try {
           const raw = fs.readFileSync(keyPath, { encoding: 'utf8' });
           const creds = JSON.parse(raw);
           if (creds && creds.client_email && creds.private_key) {
-            // Create GoogleAuth instance from parsed key file and pass to client to avoid deprecated APIs
-            const googleAuth = new GoogleAuth({
-              credentials: creds,
-              scopes: ['https://www.googleapis.com/auth/cloud-platform']
+            // Create a JWT client from parsed key file to avoid deprecated APIs
+            const jwtClient = new JWT({
+              email: creds.client_email,
+              key: creds.private_key,
+              scopes: ['https://www.googleapis.com/auth/cloud-platform'],
             });
-            speechClient = new SpeechClient({ auth: googleAuth });
-            console.log('백: SpeechClient initialized from key file (auth=GoogleAuth):', keyPath);
+            speechClient = new SpeechClient({ auth: jwtClient });
+            console.log('백: SpeechClient initialized from key file (auth=JWT):', keyPath);
             created = true;
           } else {
             // 포맷이 예상과 다르면 GoogleAuth에 keyFilename을 넘겨 auth 인스턴스를 생성한 뒤 전달
-            console.warn('백: key file parsed but missing client_email/private_key - falling back to GoogleAuth with keyFilename');
+            console.warn(
+              '백: key file parsed but missing client_email/private_key - falling back to',
+              'GoogleAuth with keyFilename',
+            );
             try {
-              const googleAuthFallback = new GoogleAuth({ keyFilename: keyPath, scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
+              const googleAuthFallback = new GoogleAuth({
+                keyFilename: keyPath,
+                scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+              });
               speechClient = new SpeechClient({ auth: googleAuthFallback });
               console.log('백: SpeechClient initialized from key file (auth=GoogleAuth via keyFilename):', keyPath);
               created = true;
@@ -118,7 +125,10 @@ try {
         } catch (e) {
           console.warn('백: key file을 JSON으로 읽는 중 오류, GoogleAuth(keyFilename)으로 시도:', e && e.message ? e.message : e);
           try {
-            const googleAuthFallback = new GoogleAuth({ keyFilename: keyPath, scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
+            const googleAuthFallback = new GoogleAuth({
+              keyFilename: keyPath,
+              scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+            });
             speechClient = new SpeechClient({ auth: googleAuthFallback });
             console.log('백: SpeechClient initialized from key file (auth=GoogleAuth via keyFilename):', keyPath);
             created = true;
@@ -229,8 +239,19 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
         // 파일 읽기
         audioBuffer = await fs.promises.readFile(fp);
         console.log('백: 업로드된 파일 읽음:', fp);
-        console.log('백: 파일 메타 - originalname:', req.file.originalname, '타입:', mimeType, '크기:', audioBuffer.length);
-        try { console.log('백: 파일 바이트(선두 64 바이트, hex):', audioBuffer.slice(0, 64).toString('hex')); } catch (e) { console.warn('백: 파일 바이트 출력 실패(무시):', e && e.message ? e.message : e); }
+        console.log(
+          '백: 파일 메타 - originalname:',
+          req.file.originalname,
+          '타입:',
+          mimeType,
+          '크기:',
+          audioBuffer.length,
+        );
+        try {
+          console.log('백: 파일 바이트(선두 64 바이트, hex):', audioBuffer.slice(0, 64).toString('hex'));
+        } catch (e) {
+          console.warn('백: 파일 바이트 출력 실패(무시):', e && e.message ? e.message : e);
+        }
       } catch (e) {
         console.error('백: 업로드 파일 읽기 오류:', e);
         return res.status(500).json({ error: '파일 처리 실패', details: e.message });
@@ -279,8 +300,14 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     }
     const callDur = Date.now() - callStart;//STT API 호출 시간 표시
     console.log('백: Google 음성 전사 처리 완료 (ms):', callDur);
-  try { console.log('백: Google STT 응답 요약:', JSON.stringify(response, ['results','alternatives','transcript'], 2).slice(0,2000)); }
-  catch (e) { console.warn('백: STT 응답 요약 출력 실패(무시):', e && e.message ? e.message : e); }
+  try {
+    console.log(
+      '백: Google STT 응답 요약:',
+      JSON.stringify(response, ['results', 'alternatives', 'transcript'], 2).slice(0, 2000),
+    );
+  } catch (e) {
+    console.warn('백: STT 응답 요약 출력 실패(무시):', e && e.message ? e.message : e);
+  }
 
   const transcription = (response.results || [])
       .map(result => (result.alternatives && result.alternatives[0]) ? result.alternatives[0].transcript : '')
@@ -314,7 +341,29 @@ app.post('/api/upload', upload.single('audio'), (req, res) => {
   }
 });
 
-// 서버 시작
-app.listen(PORT, () => {
-  console.log(`백: 서버 실행 중: http://localhost:${PORT}`);
-});
+// 서버 시작 - 포트가 사용 중일 때 자동으로 다음 포트로 재시도
+function startServer(port, attemptsLeft = 5) {
+  const server = app.listen(port, () => {
+    console.log(`백: 서버 실행 중: http://localhost:${port}`);
+  });
+
+  server.on('error', (err) => {
+    if (err && err.code === 'EADDRINUSE') {
+      console.error(`백: 포트 ${port} 사용 중(EADDRINUSE)`);
+      if (attemptsLeft > 1) {
+        const nextPort = port + 1;
+        console.log(`백: 포트 ${nextPort}으로 재시도합니다... (${attemptsLeft - 1}회 남음)`);
+        // 약간의 지연 후 재시도
+        setTimeout(() => startServer(nextPort, attemptsLeft - 1), 200);
+      } else {
+        console.error('백: 사용 가능한 포트를 찾지 못했습니다. 프로세스를 종료합니다.');
+        process.exit(1);
+      }
+    } else {
+      console.error('백: 서버 시작 중 오류:', err);
+      process.exit(1);
+    }
+  });
+}
+
+startServer(PORT);
