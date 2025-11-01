@@ -27,13 +27,7 @@ function openDB() {
       cachedDB = req.result;
       // 다른 탭에서 버전 변경 시 안전하게 닫고 캐시를 무효화
       cachedDB.onversionchange = () => {
-        try {
-          cachedDB.close();
-        } catch (e) {
-          // Ignore close errors from other contexts but log for debugging
-          // eslint-disable-next-line no-console
-          console.warn('fe_isu:idb - cachedDB.close() failed:', e && e.message ? e.message : e);
-        }
+        cachedDB.close();
         cachedDB = null;
         openPromise = null;
       };
@@ -74,17 +68,6 @@ export async function del(id) {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
     const req = store.delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
-}
-
-export async function clear() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.clear();
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
   });

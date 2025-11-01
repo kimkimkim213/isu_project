@@ -157,7 +157,7 @@ export default {
         immediate: true,
         handler(newRecs) {
     // 녹음 목록 갱신
-    console.log('프: MeetList - 목록 갱신. 수:', newRecs.length);
+  console.log('프: MeetList - 목록 갱신. 항목 수:', newRecs.length);
   
     // 시간순 정렬
           const sortedRecs = [...newRecs].sort((a, b) => {

@@ -18,15 +18,13 @@ process.on('unhandledRejection', (reason, p) => {
   console.error('백: unhandledRejection 발생 - reason:', reason, 'promise:', p);
 });//비동기 처리중 예외 발생시
 
-//환경변수 로드 및 확인 (최소한으로 로드)
+
 require('dotenv').config();
-// 로컬 fe_isu/.env에 추가 설정이 있을 수 있으므로, GOOGLE_API_KEY가 비어있을 때만 보조 로드
+
 const feEnvPath = path.join(__dirname, 'fe_isu', '.env');
 if (!process.env.GOOGLE_API_KEY && fs.existsSync(feEnvPath)) {
   require('dotenv').config({ path: feEnvPath });
 }
-
-// GOOGLE_APPLICATION_CREDENTIALS가 상대경로로 설정되어 있을 수 있으므로 __dirname 기준으로 절대경로로 정규화
 if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
   const gac = process.env.GOOGLE_APPLICATION_CREDENTIALS;
   if (gac && !path.isAbsolute(gac)) {
@@ -35,8 +33,6 @@ if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
   console.log('백: GOOGLE_APPLICATION_CREDENTIALS normalized to', process.env.GOOGLE_APPLICATION_CREDENTIALS);
 }
 
-// GOOGLE_API_KEY는 .env에서 직접 설정되어야 합니다. 필요하면 수동으로 값을 확인하세요.
-
 // PORT 번호 설정 - 기본값 3001
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 
@@ -44,7 +40,7 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 let genAI = null;
 let speechClient = null;
 
-// genAI 초기화 (간단한 실패 로직)
+// genAI 초기화
 if (process.env.GOOGLE_API_KEY) {
   try {
     genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
@@ -68,7 +64,7 @@ function createSpeechClient() {
     return new SpeechClient();
   } catch (e) {
     console.error('백: SpeechClient 생성 중 오류:', e && e.message ? e.message : e);
-    return null;
+    throw e;
   }
 }
 
@@ -79,6 +75,30 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 //파싱 처리 제한 - 50MB
+
+// 응답 포맷 래퍼 미들웨어: 모든 성공 응답을 표준화합니다.
+app.use((req, res, next) => {
+  // 원본 json 저장
+  const _json = res.json.bind(res);
+
+  res.json = function (payload) {
+    try {
+      // 이미 표준 형태이면 그대로 반환
+      if (payload && typeof payload === 'object' && (Object.prototype.hasOwnProperty.call(payload, 'success') || Object.prototype.hasOwnProperty.call(payload, 'error'))) {
+        return _json(payload);
+      }
+
+      // 기본적으로 성공 응답으로 포장
+      return _json({ success: true, data: payload });
+    } catch (e) {
+      // 포장 중 에러 발생 시 원본 동작 호출
+      console.error('백: 응답 포맷 래퍼 중 오류:', e);
+      return _json(payload);
+    }
+  };
+
+  next();
+});
 
 // JSON 파싱 오류 처리
 app.use((err, req, res, next) => {
@@ -93,7 +113,11 @@ app.use((err, req, res, next) => {
 const UP_DIR = path.join(__dirname, 'fe_isu', 'uploads'); //업로드 디렉토리 설정
 // 디렉토리 없으면 생성
 try { fs.mkdirSync(UP_DIR, { recursive: true }); }
-catch (e) { console.warn('백: 업로드 폴더 생성 실패(무시):', e.message); }
+catch (e) {
+  // 실패를 조용히 무시하지 않고 기록한 뒤 예외를 전파합니다.
+  console.error('백: 업로드 폴더 생성 실패:', e && e.message ? e.message : e);
+  throw e;
+}
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UP_DIR),
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
@@ -121,7 +145,7 @@ app.post('/api/summarize', async (req, res) => {
       return res.status(500).json({ error: '요약 엔진 초기화되지 않음' });
     }
     // 요약 AI 모델 호출 처리
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
     const prompt = `요약문을 제외한 다른 반응이나 말은 모두 출력하지 말고,이 다음에 주어지는 대화의 전문을 핵심을 꼽아 요약해줘. / 대화: ${text}`;
     const result = await model.generateContent(prompt);
     const response = await result.response;
@@ -186,8 +210,8 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     console.error('백: 전사 오류:', error);
     return res.status(500).json({ error: '전사 실패', details: error && error.message ? error.message : String(error) });
   } finally {
-    // 임시 파일은 항상 시도해서 삭제
-    fs.promises.unlink(fp).catch(err => console.warn('백: 업로드 임시파일 삭제 실패:', err && err.message ? err.message : err));
+    // 임시 파일은 항상 시도해서 삭제 — 실패 시 예외가 상위로 전파됩니다
+    await fs.promises.unlink(fp);
   }
 });
 
@@ -211,6 +235,21 @@ app.use((err, req, res, next) => {
     return res.status(400).json({ error: '파일 업로드 오류', code: err.code, message: err.message });
   }
   next(err);
+});
+
+// 중앙 에러 미들웨어: 라우트/비동기에서 발생한 에러를 한곳에서 처리합니다.
+app.use((err, req, res, next) => {
+  // 의도적으로 에러를 조용히 무시하지 않음 — 로그 후 표준 에러 응답 반환
+  console.error('백: 중앙 에러 처리:', err && err.stack ? err.stack : err);
+
+  const status = err && err.status ? err.status : 500;
+  const message = err && err.message ? err.message : '서버 오류';
+  const details = (process.env.NODE_ENV === 'production') ? undefined : (err && (err.details || err.message || String(err)));
+
+  const payload = { success: false, error: message };
+  if (details) payload.details = details;
+
+  res.status(status).json(payload);
 });
 
 // 서버 시작 - 포트가 사용 중일 때 자동으로 다음 포트로 재시도
