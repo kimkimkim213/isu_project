@@ -76,30 +76,6 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 //파싱 처리 제한 - 50MB
 
-// 응답 포맷 래퍼 미들웨어: 모든 성공 응답을 표준화합니다.
-app.use((req, res, next) => {
-  // 원본 json 저장
-  const _json = res.json.bind(res);
-
-  res.json = function (payload) {
-    try {
-      // 이미 표준 형태이면 그대로 반환
-      if (payload && typeof payload === 'object' && (Object.prototype.hasOwnProperty.call(payload, 'success') || Object.prototype.hasOwnProperty.call(payload, 'error'))) {
-        return _json(payload);
-      }
-
-      // 기본적으로 성공 응답으로 포장
-      return _json({ success: true, data: payload });
-    } catch (e) {
-      // 포장 중 에러 발생 시 원본 동작 호출
-      console.error('백: 응답 포맷 래퍼 중 오류:', e);
-      return _json(payload);
-    }
-  };
-
-  next();
-});
-
 // JSON 파싱 오류 처리
 app.use((err, req, res, next) => {
   if (err && (err instanceof SyntaxError || err.type === 'entity.parse.failed')) {
@@ -145,7 +121,7 @@ app.post('/api/summarize', async (req, res) => {
       return res.status(500).json({ error: '요약 엔진 초기화되지 않음' });
     }
     // 요약 AI 모델 호출 처리
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     const prompt = `요약문을 제외한 다른 반응이나 말은 모두 출력하지 말고,이 다음에 주어지는 대화의 전문을 핵심을 꼽아 요약해줘. / 대화: ${text}`;
     const result = await model.generateContent(prompt);
     const response = await result.response;
@@ -210,8 +186,7 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     console.error('백: 전사 오류:', error);
     return res.status(500).json({ error: '전사 실패', details: error && error.message ? error.message : String(error) });
   } finally {
-    // 임시 파일은 항상 시도해서 삭제 — 실패 시 예외가 상위로 전파됩니다
-    await fs.promises.unlink(fp);
+    await fs.promises.unlink(fp);//임시 파일 삭제
   }
 });
 
@@ -237,21 +212,6 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
-// 중앙 에러 미들웨어: 라우트/비동기에서 발생한 에러를 한곳에서 처리합니다.
-app.use((err, req, res, next) => {
-  // 의도적으로 에러를 조용히 무시하지 않음 — 로그 후 표준 에러 응답 반환
-  console.error('백: 중앙 에러 처리:', err && err.stack ? err.stack : err);
-
-  const status = err && err.status ? err.status : 500;
-  const message = err && err.message ? err.message : '서버 오류';
-  const details = (process.env.NODE_ENV === 'production') ? undefined : (err && (err.details || err.message || String(err)));
-
-  const payload = { success: false, error: message };
-  if (details) payload.details = details;
-
-  res.status(status).json(payload);
-});
-
 // 서버 시작 - 포트가 사용 중일 때 자동으로 다음 포트로 재시도
 function startServer(port, attemptsLeft = 5) {
   const server = app.listen(port, () => {
@@ -260,14 +220,14 @@ function startServer(port, attemptsLeft = 5) {
 
   server.on('error', (err) => {
     if (err && err.code === 'EADDRINUSE') {
-      console.error(`백: 포트 ${port} 사용 중(EADDRINUSE)`);
+      console.error(`백: 포트 ${port} 사용 중`);
       if (attemptsLeft > 1) {
         const nextPort = port + 1;
-        console.log(`백: 포트 ${nextPort}으로 재시도합니다... (${attemptsLeft - 1}회 남음)`);
+        console.log(`백: 포트 ${nextPort}으로 재시도 (${attemptsLeft - 1}회 남음)`);
         // 약간의 지연 후 재시도
         setTimeout(() => startServer(nextPort, attemptsLeft - 1), 200);
       } else {
-        console.error('백: 사용 가능한 포트를 찾지 못했습니다. 프로세스를 종료합니다.');
+        console.error('백: 사용 가능한 포트 없음');
         process.exit(1);
       }
     } else {

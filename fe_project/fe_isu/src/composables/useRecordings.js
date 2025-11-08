@@ -1,116 +1,6 @@
-import { ref, watch, onMounted } from 'vue';
-
-// 유틸리티 함수 (인라인)
-
-// -- IndexedDB 관련 --
-const DB_NAME = 'isu_recordings_db';
-const DB_VERSION = 1;
-const STORE_NAME = 'recordings';
-
-let cachedDB = null;
-let openPromise = null;
-
-function openDB() {
-  if (cachedDB) return Promise.resolve(cachedDB);
-  if (openPromise) return openPromise;
-
-  openPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-
-    req.onupgradeneeded = (event) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-        store.createIndex('timestamp', 'timestamp', { unique: false });
-      }
-    };
-
-    req.onsuccess = () => {
-      cachedDB = req.result;
-      cachedDB.onversionchange = () => {
-        cachedDB.close();
-        cachedDB = null;
-        openPromise = null;
-      };
-      resolve(cachedDB);
-    };
-    req.onerror = () => {
-      openPromise = null;
-      reject(req.error);
-    };
-  });
-  return openPromise; // Return the promise itself
-}
-
-async function getAll() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function put(record) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.put(record);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function del(id) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
-}
-
-// -- Blob 관련 --
-async function blobToDataURL(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
-function base64ToBlob(base64OrDataUrl, fallbackMime) {
-  if (typeof base64OrDataUrl !== 'string') return null;
-
-  if (base64OrDataUrl.includes(';base64,')) {
-    const parts = base64OrDataUrl.split(';base64,');
-    const mime = (parts[0].split(':')[1]) || fallbackMime || 'application/octet-stream';
-    const bin = atob(parts[1]);
-    const len = bin.length;
-    const arr = new Uint8Array(len);
-    
-    for (let i = 0; i < len; i++) arr[i] = bin.charCodeAt(i);
-    return new Blob([arr], { type: mime });
-  }
-
-  try {
-    const bin = atob(base64OrDataUrl);
-    const len = bin.length;
-    const arr = new Uint8Array(len);
-    for (let i = 0; i < len; i++) arr[i] = bin.charCodeAt(i);
-    return new Blob([arr], { type: fallbackMime || 'application/octet-stream' });
-  } catch (e) {
-    // 실패를 조용히 무시하지 않고 프로젝트 로그 형식으로 기록한 뒤 에러를 상위로 전달합니다.
-    console.error('프: useRecordings - base64ToBlob 실패:', e);
-    throw e;
-  }
-}
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import { blobToDataURL, base64ToBlob } from '@/utils/audio';
+import { getAll, put, del } from '@/utils/idb';
 
 
 // 새 ID 생성
@@ -145,7 +35,7 @@ async function migrateFromLocalStorage(records) {
   }
 
   localStorage.removeItem('meetingRecordings');
-  console.log('프: useRecordings - 마이그레이션 완료');
+  console.log('프: useRecordings - 전송 완료');
 }
 
 // 서버에 오디오 업로드
@@ -167,14 +57,56 @@ async function uploadAudio(rec) {
 export function useRecordings({ uploadToServer = true } = {}) {
   const records = ref([]);
   const UP_SRV = uploadToServer;
+  let saveTimeout = null;
+  let saving = false;
 
   onMounted(async () => {
     await loadStore();
   });
 
-  watch(records, async (newRecs) => {
-    await saveRecs(newRecs);
+  // Debounce saves to avoid frequent IDB writes / uploads during rapid state changes
+  watch(records, (newRecs) => {
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+      // avoid overlapping saves
+      if (saving) return;
+      saveRecs(newRecs).catch((e) => console.warn('프: useRecordings - saveRecs 오류', e));
+    }, 500);
   }, { deep: true });
+
+  onBeforeUnmount(() => {
+    if (saveTimeout) {
+      clearTimeout(saveTimeout);
+      saveTimeout = null;
+    }
+  });
+
+  // prepare audio data for storing (tries upload when enabled, otherwise converts Blob->dataURL)
+  const prepareStoreAudio = async (rec) => {
+    let storeAudio = rec.audioBlob;
+    let audioType = null;
+
+    if (UP_SRV && rec.audioBlob instanceof Blob && !rec.audioUrl) {
+      try {
+        const uploadedUrl = await uploadAudio(rec);
+        if (uploadedUrl) storeAudio = uploadedUrl;
+      } catch (e) {
+        console.warn('프: useRecordings - uploadAudio 실패', e?.message || e);
+      }
+    }
+
+    if (storeAudio instanceof Blob) {
+      try {
+        storeAudio = await blobToDataURL(storeAudio);
+        audioType = rec.audioBlob?.type || null;
+      } catch (e) {
+        console.warn('프: useRecordings - blobToDataURL 실패', e?.message || e);
+        storeAudio = null;
+      }
+    }
+
+    return { storeAudio, audioType };
+  };
 
   // IndexedDB에서 레코드 로드
   async function loadStore() {
@@ -199,27 +131,17 @@ export function useRecordings({ uploadToServer = true } = {}) {
         });
         return;
       }
-    // IDB에 데이터가 없으면 localStorage에서 마이그레이션 시도
+    // IDB에 데이터가 없으면 로컬에서 수신
     await migrateFromLocalStorage(records);
   }
 
   // 변경된 레코드를 IndexedDB에 저장
   async function saveRecs(newRecs) {
-    for (const rec of newRecs) {
-        let storeAudio = rec.audioBlob;
-        let audioType = null;
-
-        // 서버 업로드 옵션 활성화 시 Blob 업로드
-        if (UP_SRV && rec.audioBlob instanceof Blob && !rec.audioUrl) {
-          const uploadedUrl = await uploadAudio(rec);
-          if (uploadedUrl) {
-            storeAudio = uploadedUrl;
-          }
-        } else if (rec.audioBlob instanceof Blob) {
-          storeAudio = await blobToDataURL(rec.audioBlob);
-          audioType = rec.audioBlob.type || null;
-        }
-
+    if (saving) return;
+    saving = true;
+    try {
+      for (const rec of newRecs) {
+        const { storeAudio, audioType } = await prepareStoreAudio(rec);
         const storeObj = {
           id: rec.id,
           timestamp: rec.timestamp,
@@ -231,7 +153,7 @@ export function useRecordings({ uploadToServer = true } = {}) {
         };
         await put(storeObj);
       }
-    
+    } finally { saving = false; }
   }
 
   // 새 녹음 추가

@@ -3,7 +3,7 @@
     <header class="header-bar">
       <div class="header-content-wrapper">
         <div class="logo-placeholder">
-          <img src="@/assets/logo.png" alt="로고" class="logo-img" />
+          <img src="@/assets/fhrh.png" alt="로고" class="logo-img" />
         </div>
         <nav class="tabs">
           <button
@@ -170,6 +170,7 @@ body {
 }
 
 .logo-placeholder {
+  display: flex;
   flex-shrink: 0;
   margin-left: -24px;
 }
