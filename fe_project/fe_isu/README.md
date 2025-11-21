@@ -5,17 +5,22 @@
 npm install
 ```
 
-### Compiles and hot-reloads for development
+### Compiles for development - frontend
 ```
 npm run serve
 ```
 
-### Compiles and minifies for production
+### Compiles for development - backend
+```
+node server
+```
+
+### Compiles for production
 ```
 npm run build
 ```
 
-### Lints and fixes files
+### Lint
 ```
 npm run lint
 ```
@@ -30,4 +35,6 @@ See [Configuration Reference](https://cli.vuejs.org/config/).
   ```
   GOOGLE_APPLICATION_CREDENTIALS="./credentials/key.json" 
   GOOGLE_API_KEY="AIzaSyC2Lm9v0lvqoIsRr06AezK1mdDuTP9r6k4" 
+
+
   ```

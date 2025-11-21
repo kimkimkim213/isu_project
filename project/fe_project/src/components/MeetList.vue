@@ -67,43 +67,37 @@
           <div class="option-box view-full" @click="showFullTxt">
             <h4>전체 대화 보기</h4>
           </div>
-          <div class="option-box summarize" @click="reqSum">
+          <div class="option-box summarize" @click="reqSum(currentMeet)">
             <div v-if="isSummarizing && summarizingMeetingId === currentMeet.id" class="loader"></div>
             <h4 v-else>요약하기</h4>
           </div>
         </div>
 
         
-<<<<<<< HEAD
-=======
-        <!-- Summary viewer (visuals kept as original) -->
->>>>>>> parent of 678107c (진짜개많은것들수정)
+        <!-- 요약 내용 탭 -->
         <div v-if="showSum" class="summary-viewer">
           <div class="summary-text-area">
             <p>{{ summaryText }}</p>
           </div>
+          <div class="modal-buttons">
+            <button class="prompt-button download" @click="downloadDisplayed">
+              요약 다운로드 (.txt)
+            </button>
+          </div>
         </div>
-<<<<<<< HEAD
-=======
-
-        <!-- Full transcription viewer (visuals kept as original) -->
->>>>>>> parent of 678107c (진짜개많은것들수정)
+        
+        <!-- 전사문 팝업 -->
         <div v-if="showTxtView && !showSum" class="text-viewer">
           <div class="transcription-text-area">
             <p>{{ currentTxt }}</p>
           </div>
           <div class="modal-buttons">
-            <button class="prompt-button download" @click="downloadTxt">
+            <button class="prompt-button download" @click="downloadDisplayed">
               파일로 다운로드 (.txt)
             </button>
           </div>
         </div>
-<<<<<<< HEAD
-
-        
-=======
-        <!-- modal bottom action button (restore original behavior) -->
->>>>>>> parent of 678107c (진짜개많은것들수정)
+        <!-- 뒤로가기 버튼 -->
         <button 
           class="prompt-button cancel"
           @click="showTxtView || showSum ? goBack() : closeTxtModal()"
@@ -142,13 +136,11 @@ export default {
   },
   emits: ['delRec', 'updateRecName', 'reqSum', 'closeSum'], // 이벤트 목록
 
-<<<<<<< HEAD
-    data() {
-=======
-  data() {
->>>>>>> parent of 678107c (진짜개많은것들수정)
+  data() { //컴포넌트 내부 상태
       return {
         meets: [],
+        // map of record id -> blob object URL (only for Blob-created URLs)
+        audioUrlMap: {},
         editMeetId: null,
         editName: '',
         showTxtModal: false,
@@ -159,7 +151,7 @@ export default {
         showSum: this.showSummary,
       };
     },
-    watch: {
+    watch: { //props 변경 감지
       showSummary(newVal) {
         this.showSum = newVal;
       },
@@ -167,34 +159,49 @@ export default {
         immediate: true,
         handler(newRecs) {
     // 녹음 목록 갱신
-<<<<<<< HEAD
-    console.log('프: MeetList - 목록 갱신. 수:', newRecs.length);
-=======
-  console.log('프: MeetList - 목록 갱신. 항목 수:', newRecs.length);
->>>>>>> parent of 678107c (진짜개많은것들수정)
-  
+    console.log('프: MeetList - 목록 갱신. 항목 수:', newRecs.length);
+
     // 시간순 정렬
           const sortedRecs = [...newRecs].sort((a, b) => {
-            return new Date(b.timestamp) - new Date(a.timestamp); 
+            return new Date(b.timestamp) - new Date(a.timestamp);
           });
-  
+
+          // Revoke object URLs for records that no longer exist
+          try {
+            const newIds = new Set(sortedRecs.map(r => r.id));
+            for (const id in this.audioUrlMap) {
+              if (!newIds.has(id)) {
+                try { URL.revokeObjectURL(this.audioUrlMap[id]); } catch (e) { /* ignore */ }
+                delete this.audioUrlMap[id];
+              }
+            }
+          } catch (e) { console.warn('프: MeetList - audioUrlMap 정리 실패', e); }
+
           this.meets = sortedRecs.map((rec) => {
-            const audioUrl = rec.audioBlob ? URL.createObjectURL(rec.audioBlob) : null;
+            // Prefer reusing any previously created blob URL for the same record id
+            let audioUrl = null;
+            if (rec && rec.audioBlob instanceof Blob) {
+              if (this.audioUrlMap[rec.id]) {
+                audioUrl = this.audioUrlMap[rec.id];
+              } else {
+                audioUrl = URL.createObjectURL(rec.audioBlob);
+                this.audioUrlMap[rec.id] = audioUrl;
+              }
+            } else if (rec && typeof rec.audioUrl === 'string') {
+              audioUrl = rec.audioUrl;
+            }
+
             const date = new Date(rec.timestamp);
             const meetItem = {
               id: rec.id,
               title: rec.filename || `녹음본 ${date.toLocaleString()}`,
               date: date.toLocaleString(),
               audioUrl: audioUrl,
-  
-              originalTimestamp: rec.timestamp, 
-              audioBlob: rec.audioBlob, 
-<<<<<<< HEAD
-              transcription: rec.transcription || '텍스트 변환 결과 없음'
-=======
+
+              originalTimestamp: rec.timestamp,
+              audioBlob: rec.audioBlob,
               transcription: rec.transcription || '텍스트 변환 결과 없음',
               summary: rec.summary || ''
->>>>>>> parent of 678107c (진짜개많은것들수정)
             };
             console.log(`프: MeetList - 항목 매핑 ID:${meetItem.id} 전사 길이:${(meetItem.transcription||'').length}`);
             return meetItem;
@@ -202,16 +209,14 @@ export default {
         }
       }
     },
-    methods: {
-    // 다운로드 이름 생성
+    methods: { //메서드 목록
+      // 다운로드 이름 생성
       getAudioName(meet) {
-        // inside a character class only - and ] and ^ and \\
-        // need escaping; other backslashes were unnecessary
-  const baseName = meet.title.replace(new RegExp('[\\\\/:*?"<>|\\[\\]]', 'g'), '_');
+      const baseName = meet.title.replace(/[\\/:*?"<>|]/g, '_').replace(/\[/g, '_').replace(/\]/g, '_');
         return `${baseName}.webm`;
       },
       
-    // 삭제 확인창
+      // 삭제 확인창
       confirmDelete(id, title) {
         if (window.confirm(`'${title}' 녹음본을 삭제하시겠습니까?`)) {
           this.$emit('delRec', id);
@@ -219,7 +224,7 @@ export default {
         }
       },
   
-    // 이름 편집 시작
+      // 이름 편집 시작
       startRename(meet) {
         if (this.editMeetId === meet.id) return;
         this.editMeetId = meet.id;
@@ -230,7 +235,7 @@ export default {
         });
       },
   
-    // 이름 편집 저장
+      // 이름 편집 저장
       saveRename(id) {
         if (this.editMeetId !== id) return;
         const original = this.meets.find(m => m.id === id);
@@ -246,7 +251,7 @@ export default {
         window.alert(`녹음본 이름이 '${newName}'(으)로 변경되었습니다.`);
       },
   
-    // 텍스트 보기
+      // 텍스트 보기
       viewText(meet) {
         if (!meet.transcription || meet.transcription === '텍스트 변환 결과 없음' || meet.transcription.trim() === '') {
           window.alert('변환된 텍스트가 없습니다.');
@@ -254,69 +259,58 @@ export default {
         }
         this.currentMeet = meet;
         this.currentTxt = meet.transcription;
-  // Keep only necessary escapes inside the character class
-<<<<<<< HEAD
-  this.currentTxtName = `${meet.title.replace(new RegExp('[\\\\/:*?"<>|\\[\\]]', 'g'), '_')}.txt`;
-=======
-      this.currentTxtName = `${meet.title.replace(/[\\/:*?"<>|]/g, '_').replace(/\[/g, '_').replace(/\]/g, '_')}.txt`;
->>>>>>> parent of 678107c (진짜개많은것들수정)
+        this.currentTxtName = `${meet.title.replace(/[\\/:*?"<>|]/g, '_').replace(/\[/g, '_').replace(/\]/g, '_')}.txt`;
         this.showTxtView = false;
         this.showTxtModal = true;
       },
   
-    // 전체 텍스트 보기
+      // 전체 텍스트 보기
       showFullTxt() {
         this.showTxtView = true;
       },
   
-    // 텍스트 파일 다운
+      // 텍스트 파일 다운
       downloadTxt() {
         if (!this.currentTxt) {
           window.alert('다운로드할 텍스트 내용이 없습니다.');
           return;
         }
-<<<<<<< HEAD
-=======
-  
->>>>>>> parent of 678107c (진짜개많은것들수정)
-        const textBlob = new Blob([this.currentTxt], { type: 'text/plain;charset=utf-8' });
-        
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(textBlob);
-        link.download = this.currentTxtName;
-        link.click();
-        URL.revokeObjectURL(link.href);
-        
-        window.alert(`'${this.currentTxtName}' 텍스트 파일이 다운로드되었습니다.`);
-<<<<<<< HEAD
-=======
+        this.downloadBlob(this.currentTxt, this.currentTxtName, `'${this.currentTxtName}' 텍스트 파일이 다운로드되었습니다.`);
       },
 
       // 요약 파일 다운로드
       downloadSummary() {
         const text = this.summaryText || (this.currentMeet && this.currentMeet.summary) || '';
-        if (!text || String(text).trim() === '') {
-          window.alert('다운로드할 요약문이 없습니다.');
-          return;
-        }
+        if (!text || String(text).trim() === '') { window.alert('다운로드할 요약문이 없습니다.'); return; }
 
         const safeName = (this.currentMeet && this.currentMeet.title)
           ? this.currentMeet.title.replace(/[\\/:*?"<>|]/g, '_').replace(/\[/g, '_').replace(/\]/g, '_')
           : 'summary';
         const fileName = `${safeName}_summary.txt`;
 
-        const textBlob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(textBlob);
-        link.download = fileName;
-        link.click();
-        URL.revokeObjectURL(link.href);
+        this.downloadBlob(text, fileName, `'${fileName}' 요약 파일이 다운로드되었습니다.`);
+      },
 
-        window.alert(`'${fileName}' 요약 파일이 다운로드되었습니다.`);
->>>>>>> parent of 678107c (진짜개많은것들수정)
+      // 공통 다운로드 헬퍼: 텍스트 -> Blob -> 링크 클릭 -> revoke -> optional alert
+      downloadBlob(text, fileName, alertMsg) {
+        try {
+          const textBlob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(textBlob);
+          link.download = fileName;
+          // ensure the link is in the DOM for Firefox
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          try { URL.revokeObjectURL(link.href); } catch (e) { /* ignore */ }
+          if (alertMsg) window.alert(alertMsg);
+        } catch (e) {
+          console.warn('프: MeetList - downloadBlob 실패', e && e.message ? e.message : e);
+          window.alert('다운로드 중 오류가 발생했습니다.');
+        }
       },
   
-    // 텍스트 모달 닫기
+      // 텍스트 모달 닫기
       closeTxtModal() {
         this.showTxtModal = false;
         this.currentTxt = '';
@@ -324,21 +318,19 @@ export default {
         this.showTxtView = false;
       },
   
-    // 뒤로가기
+      // 뒤로가기
       goBack() {
         this.showTxtView = false;
         this.showSum = false;
+        // notify parent to close summary and clear any parent-held summary state
+        this.$emit('closeSum');
       },
-    // 요약 요청
-<<<<<<< HEAD
-      reqSum() {
-        this.$emit('reqSum', this.currentMeet);
-=======
+      // 요약 요청
       reqSum(meet) {
         // prefer explicit argument but fallback to currentMeet
         this.$emit('reqSum', meet || this.currentMeet);
       },
-      // Unified download handler used by both viewers
+      // 다운로드 처리
       downloadDisplayed() {
         if (this.showSum) {
           this.downloadSummary();
@@ -349,10 +341,10 @@ export default {
           return;
         }
         window.alert('다운로드할 내용이 없습니다.');
->>>>>>> parent of 678107c (진짜개많은것들수정)
       },
     },
-    beforeUnmount() {
+    beforeUnmount() { //컴포넌트 언마운트시
+    // 생성된 오디오 주소 해제
     this.meets.forEach(meet => {
       if (meet.audioUrl) {
         URL.revokeObjectURL(meet.audioUrl);
@@ -600,12 +592,8 @@ h2 {
     align-items: center;
     border-radius: 12px;
     cursor: pointer;
-    transition: background-color 0.3s, transform 0.2s;
+    transition: background-color 0.3s ease;
     color: white;
-}
-
-.option-box:hover {
-    transform: translateY(-5px);
 }
 
 .option-box.view-full {
@@ -677,6 +665,7 @@ h2 {
 
 .text-viewer .modal-buttons {
   display: flex;
+  width: 100%;
   justify-content: center;
   flex-shrink: 0;
 }
@@ -689,20 +678,17 @@ h2 {
   padding: 12px 24px;
   border-radius: 8px;
   border: none;
+  width: 100%;
   font-size: 1.1em;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.2s, transform 0.1s;
+  transition: background-color 0.2s ease;
   color: white;
 }
 
-.prompt-button:hover {
-    transform: translateY(-2px);
-}
-
 .prompt-button.download {
+  position: relative;
   background-color: #4CAF50;
-  flex-grow: 1;
 }
 .prompt-button.download:hover {
   background-color: #45a049;

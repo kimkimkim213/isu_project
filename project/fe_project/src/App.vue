@@ -3,7 +3,7 @@
     <header class="header-bar">
       <div class="header-content-wrapper">
         <div class="logo-placeholder">
-          <img src="@/assets/logo.png" alt="로고" class="logo-img" />
+          <img src="@/assets/fhrh.png" alt="로고" class="logo-img" />
         </div>
         <nav class="tabs">
           <button
@@ -48,13 +48,17 @@ import { useRecordings as useRecord } from '@/composables/useRecordings.js';
 
 const tab = ref('current')
 
-const { records, addRec, delRec, updateRecName } = useRecord()
+const { records, addRec, delRec, updateRecName, updateRecSummary } = useRecord()
+
 // 녹음 완료 처리
 function onRecFinish(data) { addRec(data) }
+
 // 삭제 처리
 function onRecDelete(id) { delRec(id) }
+
 // 이름 변경 처리
 function onRecRename(data) { updateRecName(data) }
+
 // 요약 관련 상태 변수
 const isSum = ref(false);
 const sumMeetId = ref(null);
@@ -64,40 +68,55 @@ const showSum = ref(false);
 // 요약 요청
 async function onSumReq(meeting) {
   if (!meeting || !meeting.transcription || meeting.transcription.trim() === '') {
-  console.warn('프: App - 요약 텍스트 없음');
+  console.warn('프: App - 요약할 텍스트가 없습니다');
     return;
   }
+
+  // 먼저 로컬(IndexedDB)에 캐시된 요약이 있는지 확인
+  const cached = records.value.find(r => r.id === meeting.id);
+  if (cached && cached.summary && String(cached.summary).trim() !== '') {
+    sumText.value = cached.summary;
+    showSum.value = true;
+    return;
+  }
+
+  // 캐시가 없으면 서버로 요청
   isSum.value = true;
   sumMeetId.value = meeting.id;
   sumText.value = '';
   showSum.value = false;
+
   try {
+    // 요약 API 호출
     const response = await fetch('http://localhost:3001/api/summarize', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: {'Content-Type': 'application/json',},
       body: JSON.stringify({ text: meeting.transcription }),
     });
-
+    // 서버 에러인 경우 간소화: 실패 메시지 반환
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || '요약 API 실패');
+      throw new Error('요약 API 실패');
     }
+    // 요약 결과 처리
     const data = await response.json();
     sumText.value = data.summary;
     showSum.value = true;
-  console.log('프: App - 요약 완료');
-
-  } catch (error) {
-  console.error('프: App - 요약 오류:', error);
-    sumText.value = `요약 실패: ${error.message}`;
+    console.log('프: App - 요약 완료');
+    // 요약 로컬에 저장
+    updateRecSummary({ id: meeting.id, summary: data.summary });
+  } catch (err) {
+    // 네트워크/파싱/서버 에러를 잡아서 사용자에게 보여주도록 처리
+    console.error('프: App - 요약 실패', err);
+    // 오류 발생 시 사용자에게 표시할 텍스트 생성
+    const userMsg = err && err.message ? err.message : String(err);
+    sumText.value = '요약 실패: ' + userMsg;
     showSum.value = true;
   } finally {
     isSum.value = false;
     sumMeetId.value = null;
   }
-}
+  }
+
 
 // 요약 닫기
 function onSumClose() {
@@ -157,6 +176,7 @@ body {
 }
 
 .logo-placeholder {
+  display: flex;
   flex-shrink: 0;
   margin-left: -24px;
 }

@@ -1,9 +1,4 @@
-/**
- * 오디오 및 Blob 관련 유틸리티 함수
- */
-
-// Blob 및 Base64 변환 관련 유틸리티 함수
-
+//  오디오 데이터 변환 관련 함수
 export async function blobToDataURL(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -33,7 +28,6 @@ export function base64ToBlob(base64OrDataUrl, fallbackMime) {
   for (let i = 0; i < len; i++) arr[i] = bin.charCodeAt(i);
   return new Blob([arr], { type: fallbackMime || 'application/octet-stream' });
 }
-<<<<<<< HEAD
 
 // PCM and WAV helpers
 export function floatTo16BitPCM(output, offset, input) {
@@ -157,19 +151,19 @@ export async function sendToSTT(audioBlob, sampleRate, mimeType) {
     form.append('audio', sendBlob, filename);
     form.append('sampleRate', String(finalSampleRate));
     form.append('mimeType', finalMimeType);
-    // STT 서버에 전송
-    const res = await fetch('http://localhost:3001/api/transcribe', { 
+
+    const res = await fetch('http://localhost:3001/api/transcribe', {
       method: 'POST',
       body: form,
     });
-    // 응답 처리
+
     if (!res.ok) {
       const errorText = await res.text().catch(() => '응답 파싱 실패');
       const errMsg = `STT API 오류: ${res.status} - ${errorText}`;
       console.error('프:', errMsg);
       throw new Error(errMsg);
     }
-    // 전사 결과 반환
+
     const data = await res.json().catch(() => ({}));
     return data.transcription || '변환된 텍스트가 없습니다.';
   } catch (err) {
@@ -178,5 +172,3 @@ export async function sendToSTT(audioBlob, sampleRate, mimeType) {
     return null;
   }
 }
-=======
->>>>>>> parent of 678107c (진짜개많은것들수정)

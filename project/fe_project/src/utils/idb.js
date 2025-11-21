@@ -1,9 +1,10 @@
-// IndexedDB 관련 함수
+// IndexedDB 관련 유틸
 
 const DB_NAME = 'isu_recordings_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'recordings';
 
+// 캐시된 DB 인스턴스 및 열기 프라미스
 let cachedDB = null;
 let openPromise = null;
 
@@ -24,6 +25,7 @@ function openDB() {
 
     req.onsuccess = () => {
       cachedDB = req.result;
+      // 다른 탭에서 버전 변경 시 안전하게 닫고 캐시를 무효화
       cachedDB.onversionchange = () => {
         cachedDB.close();
         cachedDB = null;
@@ -36,7 +38,6 @@ function openDB() {
       reject(req.error);
     };
   });
-    return openPromise;
 }
 
 export async function getAll() {
@@ -67,7 +68,6 @@ export async function del(id) {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
     const req = store.delete(id);
-    
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
   });
