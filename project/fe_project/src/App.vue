@@ -182,7 +182,8 @@ body {
 }
 
 .logo-img {
-  height: 80px;
+  width: 100px;
+  height: 100px;
   object-fit: contain;
 }
 
