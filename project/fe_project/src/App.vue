@@ -86,9 +86,9 @@ async function onSumReq(meeting) {
   sumText.value = '';
   showSum.value = false;
 
-  try {
+    try {
     // 요약 API 호출
-    const response = await fetch('http://localhost:3002/api/summarize', {
+    const response = await fetch('http://localhost:3001/api/summarize', {
       method: 'POST',
       headers: {'Content-Type': 'application/json',},
       body: JSON.stringify({ text: meeting.transcription }),

@@ -169,20 +169,18 @@ async function sendToSTT(audioBlob, sampleRate, mimeType) {
   form.append('audio', sendBlob, filename);
   form.append('sampleRate', String(finalSampleRate));
   form.append('mimeType', finalMimeType);
-  
-  const res = await fetch('http://localhost:3002/api/transcribe', { // STT API 엔드포인트
+  const res = await fetch('http://localhost:3001/api/transcribe', { // STT API 엔드포인트
     method: 'POST',
     body: form,
   });
 
   if (!res.ok) {
-    let errorText = '음성 인식 요청이 실패했습니다. 잠시 후 다시 시도해주세요.';
+    let errorText = `음성 인식 요청이 실패했습니다. (status ${res.status})`;
     try {
       const errJson = await res.json();
       if (errJson && errJson.message) errorText = errJson.message;
       else if (typeof errJson === 'string' && errJson.length) errorText = errJson;
     } catch (e) {
-      // 파싱 실패 시 텍스트로 읽어보기
       try { const t = await res.text(); if (t) errorText = t; } catch (ee) { console.debug('프: sendToSTT - response text parse failed', ee); }
     }
     throw new Error(errorText);

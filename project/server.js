@@ -9,8 +9,7 @@ const fs = require('fs');
 const multer = require('multer');
 
 const app = express();
-
-// Helper: send standardized, user-friendly error responses while logging internal details
+// 공통 에러 응답 함수
 function sendError(res, status, userMessage, code, internalErr) {
   try {
     if (internalErr) {
@@ -244,7 +243,7 @@ app.post('/api/upload', upload.single('audio'), (req, res) => {
   }
 });
 
-// Multer 전용 에러 핸들러: 업로드 관련 에러를 명확히 처리
+// Multer 에러 핸들러
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     console.error('백: Multer 오류:', err.code, err.message);
@@ -253,9 +252,8 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
-// 중앙 에러 미들웨어: 라우트/비동기에서 발생한 에러를 한곳에서 처리합니다.
+// 중앙 에러 처리
 app.use((err, req, res, next) => {
-  // 의도적으로 에러를 조용히 무시하지 않음 — 로그 후 표준 에러 응답 반환
   console.error('백: 중앙 에러 처리:', err && err.stack ? err.stack : err);
 
   const status = err && err.status ? err.status : 500;
@@ -269,7 +267,7 @@ app.use((err, req, res, next) => {
 });
 
 
-// 서버 시작 - 포트가 사용 중일 때 자동으로 다음 포트로 재시도
+// 서버 시작
 function startServer(port, attemptsLeft = 5) {
   const server = app.listen(port, () => {
     console.log(`백: 서버 실행 중: http://localhost:${port}`);
@@ -278,6 +276,7 @@ function startServer(port, attemptsLeft = 5) {
   server.on('error', (err) => {
     if (err && err.code === 'EADDRINUSE') {
       console.error(`백: 포트 ${port} 사용 중(EADDRINUSE)`);
+      //포트가 사용 중일 때 자동으로 다음 포트로 재시도
       if (attemptsLeft > 1) {
         const nextPort = port + 1;
         console.log(`백: 포트 ${nextPort}으로 재시도합니다... (${attemptsLeft - 1}회 남음)`);

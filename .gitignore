@@ -50,20 +50,6 @@ pnpm-debug.log*
 *.tsx
 
 # 환경 변수 파일
-fe_project/.env.local
-fe_project/.env.*.local
-fe_project/*.env
-fe_project/key.json
-fe_project/key.env.local
-fe_project/key.env.*.local
-fe_project/*.key.env
-fe_project/credentials/key.json
-fe_project/.credentials/key.json
-fe_project/*/key.json
-fe_project/.*/key.json
-fe_project/fe_isu/node_modules/
-~$*
-=======
 .txt
 .md
 .log
@@ -72,10 +58,10 @@ fe_project/fe_isu/node_modules/
 *.log
 *.md
 *.json
-*.yml
-*.yaml
-*.xml
-*.csv
-*.ts
-*.tsx
+.yml
+.yaml
+.xml
+.csv
+.ts
+.tsx
 
