@@ -10,6 +10,21 @@ const multer = require('multer');
 
 const app = express();
 
+// Helper: send standardized, user-friendly error responses while logging internal details
+function sendError(res, status, userMessage, code, internalErr) {
+  try {
+    if (internalErr) {
+      console.error('백: 내부 오류 상세:', internalErr && internalErr.stack ? internalErr.stack : internalErr);
+    }
+  } catch (e) {
+    console.error('백: sendError 로그 중 오류:', e);
+  }
+
+  const payload = { success: false, message: userMessage || '문제가 발생했습니다. 잠시 후 다시 시도해주세요.' };
+  if (code) payload.code = code;
+  return res.status(status || 500).json(payload);
+}
+
 // 전역 예외 처리
 process.on('uncaughtException', (err) => {
   console.error('백: uncaughtException 발생:', err && err.stack ? err.stack : err);
@@ -104,7 +119,7 @@ app.use((req, res, next) => {
 app.use((err, req, res, next) => {
   if (err && (err instanceof SyntaxError || err.type === 'entity.parse.failed')) {
     console.error('백: JSON 파싱 오류:', err.message);
-    return res.status(400).json({ error: '유효하지 않은 JSON 요청' });
+    return sendError(res, 400, '유효하지 않은 요청입니다. 전송한 데이터를 확인해주세요.', 'INVALID_JSON', err);
   }
   next(err);
 });
@@ -139,10 +154,10 @@ app.post('/api/summarize', async (req, res) => {
   try { // 요약 시도
     const { text } = req.body;//요약할 텍스트
     if (!text) {
-      return res.status(400).json({ error: '요약할 텍스트가 없음' });
+      return sendError(res, 400, '요약할 텍스트가 없습니다.', 'NO_SUMMARY_TEXT');
     }
     if (!genAI) {
-      return res.status(500).json({ error: '요약 엔진 초기화되지 않음' });
+      return sendError(res, 500, '요약 기능을 사용할 수 없습니다. 관리자에게 문의하세요.', 'SUMMARIZE_NOT_READY');
     }
     // 요약 AI 모델 호출 처리
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
@@ -153,14 +168,14 @@ app.post('/api/summarize', async (req, res) => {
     res.json({ summary });//요약문 반환
     } catch (error) {
     console.error('백: 요약 오류:', error);
-    res.status(500).json({ error: '요약 실패', 사유: error && error.message ? error.message : String(error) });
+    return sendError(res, 500, '요약에 실패했습니다. 잠시 후 다시 시도해주세요.', 'SUMMARIZE_FAILED', error);
   }
 });
 
 // 음성 전사 처리
 app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
-  if (!speechClient) return res.status(500).json({ error: '음성인식 클라이언트 초기화되지 않음' });
-  if (!req.file) return res.status(400).json({ error: '오디오 파일 필요' });
+  if (!speechClient) return sendError(res, 500, '음성 인식 서비스를 사용할 수 없습니다.', 'STT_NOT_READY');
+  if (!req.file) return sendError(res, 400, '업로드된 오디오 파일이 없습니다. 파일을 다시 확인해주세요.', 'MISSING_FILE');
 
   const startTime = Date.now();
   const fp = req.file.path;
@@ -192,7 +207,7 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     //응답 처리
     if (!response || !response.results || response.results.length === 0) {
       console.warn('백: STT가 결과를 반환하지 않음');
-      return res.status(502).json({ error: '음성 인식 결과가 없습니다. 다시 시도하세요.' });
+      return sendError(res, 502, '음성 인식 결과를 받을 수 없습니다. 잠시 후 다시 시도해주세요.', 'STT_NO_RESULT');
     }
     // 전사 결과 종합
     const transcription = (response.results || [])
@@ -202,14 +217,14 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
 
     if (!transcription || transcription.trim().length === 0) {
       console.warn('백: STT 결과가 비어 있음');
-      return res.status(502).json({ error: '음성 인식 결과가 없습니다. 다시 시도하세요.' });
+      return sendError(res, 502, '음성 인식 결과를 받을 수 없습니다. 잠시 후 다시 시도해주세요.', 'STT_EMPTY_RESULT');
     }
     //전사 결과 반환
     console.log('백: 전사 완료 — 문자 길이:', transcription.length, '처리시간(ms):', Date.now() - startTime);
     return res.json({ transcription });
   } catch (error) {
     console.error('백: 전사 오류:', error);
-    return res.status(500).json({ error: '전사 실패', details: error && error.message ? error.message : String(error) });
+    return sendError(res, 500, '음성 전사 중 오류가 발생했습니다. 나중에 다시 시도해주세요.', 'TRANSCRIBE_FAILED', error);
   } finally {
     // 임시 파일은 항상 시도해서 삭제 — 실패 시 예외가 상위로 전파됩니다
     await fs.promises.unlink(fp);
@@ -219,13 +234,13 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
 // 업로드 앤드포인트
 app.post('/api/upload', upload.single('audio'), (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: '파일 없음' });//파일이 없으면 오류400 반환
+    if (!req.file) return sendError(res, 400, '업로드된 파일이 없습니다. 파일을 확인해주세요.', 'NO_FILE');
     const url = `http://localhost:${PORT}/uploads/${req.file.filename}`;//업로드된 파일URL 생성
     console.log('백: 업로드 완료 URL:', url);//업로드된 파일 URL 표시
     res.json({ url });//URL 반환
   } catch (e) {
     console.error('백: 업로드 오류:', e);
-    res.status(500).json({ error: '업로드 실패', details: e.message });
+    return sendError(res, 500, '파일 업로드에 실패했습니다. 잠시 후 다시 시도해주세요.', 'UPLOAD_FAILED', e);
   }
 });
 
@@ -233,7 +248,7 @@ app.post('/api/upload', upload.single('audio'), (req, res) => {
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     console.error('백: Multer 오류:', err.code, err.message);
-    return res.status(400).json({ error: '파일 업로드 오류', code: err.code, message: err.message });
+    return sendError(res, 400, '파일 업로드 중 오류가 발생했습니다. 업로드한 파일을 확인해주세요.', err.code || 'MULTER_ERROR', err);
   }
   next(err);
 });
@@ -247,11 +262,12 @@ app.use((err, req, res, next) => {
   const message = err && err.message ? err.message : '서버 오류';
   const details = (process.env.NODE_ENV === 'production') ? undefined : (err && (err.details || err.message || String(err)));
 
-  const payload = { success: false, error: message };
+  const payload = { success: false, message };
   if (details) payload.details = details;
 
   res.status(status).json(payload);
 });
+
 
 // 서버 시작 - 포트가 사용 중일 때 자동으로 다음 포트로 재시도
 function startServer(port, attemptsLeft = 5) {

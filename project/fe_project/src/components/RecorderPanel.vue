@@ -170,14 +170,22 @@ async function sendToSTT(audioBlob, sampleRate, mimeType) {
   form.append('sampleRate', String(finalSampleRate));
   form.append('mimeType', finalMimeType);
   
-  const res = await fetch('http://localhost:3001/api/transcribe', { // STT API 엔드포인트
+  const res = await fetch('http://localhost:3002/api/transcribe', { // STT API 엔드포인트
     method: 'POST',
     body: form,
   });
 
   if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`STT API 오류: ${res.status} - ${errorText}`);
+    let errorText = '음성 인식 요청이 실패했습니다. 잠시 후 다시 시도해주세요.';
+    try {
+      const errJson = await res.json();
+      if (errJson && errJson.message) errorText = errJson.message;
+      else if (typeof errJson === 'string' && errJson.length) errorText = errJson;
+    } catch (e) {
+      // 파싱 실패 시 텍스트로 읽어보기
+      try { const t = await res.text(); if (t) errorText = t; } catch (ee) { console.debug('프: sendToSTT - response text parse failed', ee); }
+    }
+    throw new Error(errorText);
   }
 
   const data = await res.json();
@@ -284,7 +292,13 @@ async function toggleRec() {
 
   if (!isRec.value) {
     // 녹음 시작
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      console.error('프: RecorderPanel - 마이크 접근 실패:', err);
+      window.alert('마이크 접근에 실패했습니다. 브라우저 권한을 확인해주세요.\n\n' + (err && err.message ? err.message : ''));
+      return;
+    }
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
     sampleRate.value = audioContext.sampleRate;
   console.log('프: RecorderPanel - 샘플레이트:', sampleRate.value);
@@ -391,16 +405,28 @@ async function confirmSave() {
 
   isTranscribing.value = true;
   showNamePrompt.value = false;
-  
-  let transcription = '';
-  transcription = await sendToSTT(audioBlob, sampleRate.value, mimeType.value);
-  console.log('프: RecorderPanel - 전사 결과:', transcription);
-  window.alert('음성이 텍스트로 변환되었습니다!');
-  isTranscribing.value = false;
 
-  emit('recording-finished', { audioBlob, filename, transcription }); 
-  console.log(`프: RecorderPanel - 녹음 저장됨: "${filename}"`);
-  resetState();
+  let transcription = '';
+  try {
+    transcription = await sendToSTT(audioBlob, sampleRate.value, mimeType.value);
+    console.log('프: RecorderPanel - 전사 결과:', transcription);
+    window.alert('음성이 텍스트로 변환되었습니다!');
+
+    emit('recording-finished', { audioBlob, filename, transcription });
+    console.log(`프: RecorderPanel - 녹음 저장됨: "${filename}"`);
+    resetState();
+  } catch (err) {
+    console.error('프: RecorderPanel - 전사 실패:', err);
+    //녹음 화면으로 복귀
+    isTranscribing.value = false;
+    showNamePrompt.value = false;
+    showOpts.value = false;
+    const userMsg = err && err.message ? err.message : '전사 중 알 수 없는 오류가 발생했습니다.';
+    window.alert('음성 인식 요청에 실패했습니다.\n\n' + userMsg + '\n\n녹음 화면으로 돌아갑니다.');
+    // 상태 초기화하여 녹음 대기 화면으로 복귀
+    resetState();
+    return;
+  }
 }
 
 // 저장 안하고 종료

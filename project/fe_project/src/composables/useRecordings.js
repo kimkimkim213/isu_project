@@ -9,6 +9,8 @@ const STORE_NAME = 'recordings';
 
 let cachedDB = null;
 let openPromise = null;
+// 초기 로드 중에 발생하는 오류는 새로고침 시 불필요한 alert를 띄우지 않도록 제어합니다.
+let isInitializing = true;
 
 function openDB() {
   if (cachedDB) return Promise.resolve(cachedDB);
@@ -150,18 +152,34 @@ async function migrateFromLocalStorage(records) {
 
 // 서버에 오디오 업로드
 async function uploadAudio(rec) {
-  const form = new FormData();
-  form.append('audio', rec.audioBlob, rec.filename || 'recording.webm');
-  const resp = await fetch('/api/upload', { method: 'POST', body: form });
+  try {
+    const form = new FormData();
+    form.append('audio', rec.audioBlob, rec.filename || 'recording.webm');
+    const resp = await fetch('/api/upload', { method: 'POST', body: form });
 
-  if (resp.ok) {
+    if (!resp.ok) {
+      let errMsg = '오디오 업로드에 실패했습니다.';
+      try {
+        const errJson = await resp.json();
+        if (errJson && errJson.message) errMsg = errJson.message;
+      } catch (e) {
+        // ignore json parse errors
+      }
+      console.warn('프: useRecordings - upload failed:', resp.status, errMsg);
+      if (!isInitializing) window.alert(errMsg + '\n\n잠시 후 다시 시도해 주세요.');
+      return null;
+    }
+
     const body = await resp.json();
     rec.audioUrl = body.url;
     rec.audioBlob = null; // Blob 대신 URL 사용
-  console.log('프: useRecordings - 업로드 성공. URL:', body.url);
+    console.log('프: useRecordings - 업로드 성공. URL:', body.url);
     return body.url;
+  } catch (e) {
+    console.error('프: useRecordings - uploadAudio 예외:', e);
+    if (!isInitializing) window.alert('오디오 업로드 중 네트워크 오류가 발생했습니다. 인터넷 연결을 확인하세요.');
+    return null;
   }
-  return null;
 }
 
 export function useRecordings({ uploadToServer = true } = {}) {
@@ -169,7 +187,18 @@ export function useRecordings({ uploadToServer = true } = {}) {
   const UP_SRV = uploadToServer;
 
   onMounted(async () => {
-    await loadStore();
+    isInitializing = true;
+    try {
+      await loadStore();
+    } catch (e) {
+      console.error('프: useRecordings - loadStore 실패:', e);
+      // 초기화 중 에러는 새로고침 시 반복되는 alert를 방지하기 위해 콘솔만 남깁니다.
+      if (!isInitializing) {
+        window.alert('로컬 저장소를 불러오는 중 오류가 발생했습니다. 일부 기능이 제한될 수 있습니다.');
+      }
+    } finally {
+      isInitializing = false;
+    }
   });
 
   watch(records, async (newRecs) => {
@@ -200,12 +229,21 @@ export function useRecordings({ uploadToServer = true } = {}) {
         return;
       }
     // IDB에 데이터가 없으면 localStorage에서 마이그레이션 시도
-    await migrateFromLocalStorage(records);
+    try {
+      await migrateFromLocalStorage(records);
+    } catch (e) {
+      console.error('프: useRecordings - migrateFromLocalStorage 실패:', e);
+      // 마이그레이션 실패는 치명적이지 않으므로 초기화 중에는 alert를 띄우지 않습니다.
+      if (!isInitializing) {
+        window.alert('기존 녹음 마이그레이션 중 오류가 발생했습니다. 일부 이전 녹음이 보이지 않을 수 있습니다.');
+      }
+    }
   }
 
   // 변경된 레코드를 IndexedDB에 저장
   async function saveRecs(newRecs) {
-    for (const rec of newRecs) {
+    try {
+      for (const rec of newRecs) {
         let storeAudio = rec.audioBlob;
         let audioType = null;
 
@@ -216,7 +254,12 @@ export function useRecordings({ uploadToServer = true } = {}) {
             storeAudio = uploadedUrl;
           }
         } else if (rec.audioBlob instanceof Blob) {
-          storeAudio = await blobToDataURL(rec.audioBlob);
+          try {
+            storeAudio = await blobToDataURL(rec.audioBlob);
+          } catch (e) {
+            console.error('프: useRecordings - blobToDataURL 실패:', e);
+            storeAudio = null;
+          }
           audioType = rec.audioBlob.type || null;
         }
 
@@ -229,8 +272,18 @@ export function useRecordings({ uploadToServer = true } = {}) {
           audioBlob: storeAudio,
           audioType
         };
-        await put(storeObj);
+        try {
+          await put(storeObj);
+        } catch (e) {
+          console.error('프: useRecordings - IndexedDB put 실패:', e, storeObj.id);
+        }
       }
+    } catch (e) {
+      console.error('프: useRecordings - saveRecs 예외:', e);
+      if (!isInitializing) {
+        window.alert('녹음 저장 중 오류가 발생했습니다. 변경 사항이 저장되지 않을 수 있습니다.');
+      }
+    }
     
   }
 

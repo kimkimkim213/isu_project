@@ -3,7 +3,7 @@
     <header class="header-bar">
       <div class="header-content-wrapper">
         <div class="logo-placeholder">
-          <img src="@/assets/logo.png" alt="로고" class="logo-img" />
+          <img src="@/assets/logo2.png" alt="로고" class="logo-img" />
         </div>
         <nav class="tabs">
           <button
@@ -88,14 +88,21 @@ async function onSumReq(meeting) {
 
   try {
     // 요약 API 호출
-    const response = await fetch('http://localhost:3001/api/summarize', {
+    const response = await fetch('http://localhost:3002/api/summarize', {
       method: 'POST',
       headers: {'Content-Type': 'application/json',},
       body: JSON.stringify({ text: meeting.transcription }),
     });
-    // 서버 에러인 경우 간소화: 실패 메시지 반환
+    // 서버 에러인 경우: 서버에서 제공하는 사용자용 메시지를 우선 사용
     if (!response.ok) {
-      throw new Error('요약 API 실패');
+      let errMsg = '요약 요청에 실패했습니다. 잠시 후 다시 시도해주세요.';
+      try {
+        const errData = await response.json();
+        if (errData && errData.message) errMsg = errData.message;
+      } catch (e) {
+        // 파싱 실패 시 기본 메시지 사용
+      }
+      throw new Error(errMsg);
     }
     // 요약 결과 처리
     const data = await response.json();
@@ -181,8 +188,8 @@ body {
 }
 
 .logo-img {
-  width: 100px;
-  height: 100px;
+  width: 200px;
+  height: 200px;
   object-fit: contain;
 }
 
